@@ -7,6 +7,6 @@
 
 import UIKit
 
-protocol CDCScannerDelegate: UIViewController {
+public protocol CDCScannerDelegate: AnyObject {
     func ccScannerCompleted(cardNumber: String, expDate: String, cardType: String)
 }
