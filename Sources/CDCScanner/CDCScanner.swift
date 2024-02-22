@@ -41,7 +41,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
        }
     
     /** Add custom Cards to run a visual check against in a scan. */
-    func addCustomCards(cards: Array<Card>) {
+    public func addCustomCards(cards: Array<Card>) {
         for card in cards {
             self.customCards[card.binRange] = card.lengthRange
         }
