@@ -172,7 +172,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
         self.captureSession!.addOutput(videoOutput)
     }
     
-    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
+    public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection)
     {
         if !processing
         {
