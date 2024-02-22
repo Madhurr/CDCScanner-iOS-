@@ -66,6 +66,6 @@ extension CardType {
 }
 
 
-enum RecognitionLevel {
+public enum RecognitionLevel {
     case fastest, fast, normal, accurate, veryaccurate
 }
