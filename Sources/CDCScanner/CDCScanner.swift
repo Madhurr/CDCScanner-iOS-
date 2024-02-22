@@ -6,7 +6,7 @@ import AVFoundation
 
 
 @available(iOS 13.0, *)
-class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
+public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     
     var delegate: CDCScannerDelegate?
     var createCardType = Card()
@@ -35,7 +35,7 @@ class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate
     var customCards = [String: String]()
     
     // MARK: - Lifecycle
-       override func viewDidLoad() {
+     public  override func viewDidLoad() {
            super.viewDidLoad()
            setupCardOptions()
        }
