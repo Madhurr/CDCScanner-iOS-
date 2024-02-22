@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct Card {
+public struct Card {
      var binRange = ""
      var lengthRange = ""
      
