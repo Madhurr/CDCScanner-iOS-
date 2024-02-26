@@ -17,7 +17,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
     
     let year = Calendar.current.component(.year, from: Date())
     public var usedCards = [CardType: [String: String]]()
-    public recognizedText = ""
+    public var recognizedText = ""
     public var finalText = ""
     public var image: UIImage?
     public var processing = false
