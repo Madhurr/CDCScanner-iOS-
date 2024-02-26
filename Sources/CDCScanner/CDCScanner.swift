@@ -110,7 +110,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
     
     public func  startScanner(viewController: UIViewController)
     {
-       
+        self.captureSession = AVCaptureSession()
         let preview = AVCaptureVideoPreviewLayer(session: self.captureSession!)
         preview.videoGravity = .resizeAspect
         self.previewLayer = preview
