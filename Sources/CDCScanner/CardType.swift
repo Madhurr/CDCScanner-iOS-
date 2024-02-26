@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum CardType: String {
+public enum CardType: String {
     case all
     case noneExceptCustom
     case visa = "Visa"
