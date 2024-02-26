@@ -8,31 +8,31 @@ import AVFoundation
 @available(iOS 13.0, *)
 public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferDelegate {
     
-    var delegate: CDCScannerDelegate?
-    var createCardType = Card()
-    var cards = [CardType.all]
-    var recognitionLevel: RecognitionLevel?
+   public var delegate: CDCScannerDelegate?
+   public var createCardType = Card()
+   public var cards = [CardType.all]
+   public var recognitionLevel: RecognitionLevel?
     
     // MARK: - Standard Variables
     
     let year = Calendar.current.component(.year, from: Date())
-    var usedCards = [CardType: [String: String]]()
-    var recognizedText = ""
-    var finalText = ""
-    var image: UIImage?
-    var processing = false
-    var findExp = false
-    var cardNumberDict = [String:Int]()
-    var cardExpDict = [String:Int]()
-    var cardExpPass = 0
-    var nagivationCont = UINavigationController()
-    var foundType: CardType?
-    var finalCardNumber = ""
-    var finalExpDate = ""
-    var finalName = ""
-    var ccPassLoops = 3
-    var expPassLoops = 3
-    var customCards = [String: String]()
+    public var usedCards = [CardType: [String: String]]()
+    public recognizedText = ""
+    public var finalText = ""
+    public var image: UIImage?
+    public var processing = false
+    public var findExp = false
+    public var cardNumberDict = [String:Int]()
+    public var cardExpDict = [String:Int]()
+    public var cardExpPass = 0
+    public var nagivationCont = UINavigationController()
+    public var foundType: CardType?
+    public var finalCardNumber = ""
+    public var finalExpDate = ""
+    public var finalName = ""
+    public var ccPassLoops = 3
+    public var expPassLoops = 3
+    public var customCards = [String: String]()
     
     // MARK: - Lifecycle
      public  override func viewDidLoad() {
@@ -47,7 +47,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
         }
     }
     
-    func setupCardOptions() {
+    public func setupCardOptions() {
         self.ccPassLoops = 3
         self.expPassLoops = 4
         
@@ -108,7 +108,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
      var captureSession: AVCaptureSession?
      lazy var previewLayer = AVCaptureVideoPreviewLayer()
     
-    func  startScanner(viewController: UIViewController)
+    public func  startScanner(viewController: UIViewController)
     {
        
         let preview = AVCaptureVideoPreviewLayer(session: self.captureSession!)
@@ -210,7 +210,7 @@ public class CDCScanner: UIViewController, AVCaptureVideoDataOutputSampleBufferD
         }
     }
     
-     func callDelegate() {
+    public  func callDelegate() {
         self.delegate?.ccScannerCompleted(cardNumber: self.finalCardNumber,
                                           expDate: self.finalExpDate,
                                           cardType: self.foundType?.rawValue ?? "error")
