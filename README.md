@@ -53,6 +53,7 @@ To use CDCScanner-iOS in your project, follow these steps:
     ```
     let scanner = CDCScanner()
     scanner.delegate = self
+    scanner.startScanner(self)
 
 3. Implement the delegate methods to receive scanned card information:
     
