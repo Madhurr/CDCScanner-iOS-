@@ -5,7 +5,7 @@ import UIKit
 /// A text field for the expiry date, formatted as `MM/YY` while typing.
 @MainActor
 public final class SecureExpiryField: SecureField {
-    public private(set) var state: ExpiryFieldState = .empty
+    public private(set) var expiryState: ExpiryFieldState = .empty
     public var onStateChange: ((ExpiryFieldState) -> Void)?
 
     private let formatter = ExpiryInputFormatter()
@@ -44,17 +44,17 @@ public final class SecureExpiryField: SecureField {
     override var keepsCaretAtEnd: Bool { true }
 
     override var showsInvalidState: Bool {
-        state.isComplete && !state.isValid
+        expiryState.isComplete && !expiryState.isValid
     }
 
     override func accessibilityValueForCurrentValue() -> String? {
-        state.expiry?.formatted ?? (rawValue.isEmpty ? nil : display(for: rawValue))
+        expiryState.expiry?.formatted ?? (rawValue.isEmpty ? nil : display(for: rawValue))
     }
 
     override func valueDidChange() {
         let newState = formatter.state(for: rawValue)
-        guard newState != state else { return }
-        state = newState
+        guard newState != expiryState else { return }
+        expiryState = newState
         onStateChange?(newState)
     }
 }

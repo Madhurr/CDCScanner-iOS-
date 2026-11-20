@@ -228,7 +228,7 @@ BIN and the last four digits.
 
 | Protection | Detail |
 |---|---|
-| No `text` on the public API | The number is unreachable from host code. Observe `state` (brand, validity, BIN, last four) instead. |
+| No `text` on the public API | The number is unreachable from host code. Observe `numberState` (brand, validity, BIN, last four) instead. |
 | Copy, cut, share and look-up blocked | The edit menu offers paste only. `pastePolicy = .disabled` removes that too. |
 | Keyboard cannot learn the value | Autocorrection, predictive text, spell checking and smart punctuation are off. |
 | Hidden from the app switcher | Contents are covered while the app is inactive, so the snapshot shows bullets. |

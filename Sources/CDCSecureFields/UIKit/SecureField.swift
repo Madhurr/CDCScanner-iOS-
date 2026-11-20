@@ -85,10 +85,6 @@ open class SecureField: UIControl {
         setUp()
     }
 
-    public convenience init() {
-        self.init(frame: .zero)
-    }
-
     @available(*, unavailable)
     public required init?(coder: NSCoder) {
         fatalError("Secure fields do not support storyboards; create them in code.")

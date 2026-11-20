@@ -4,7 +4,7 @@ import UIKit
 
 /// A hardened text field for the card number (PAN).
 ///
-/// The number never leaves the field through the public API. Observe ``state`` for the brand,
+/// The number never leaves the field through the public API. Observe ``numberState`` for the brand,
 /// validity, BIN and last four, and hand the field to a ``SecureCardForm`` to tokenise.
 ///
 /// ```swift
@@ -18,9 +18,9 @@ import UIKit
 @MainActor
 public final class SecureCardNumberField: SecureField {
     /// What the host app may know about the number. Updated on every keystroke.
-    public private(set) var state: CardNumberState = .empty
+    public private(set) var numberState: CardNumberState = .empty
 
-    /// Called whenever ``state`` changes.
+    /// Called whenever ``numberState`` changes.
     public var onStateChange: ((CardNumberState) -> Void)?
 
     /// The brands accepted. Numbers of other brands are reported as invalid.
@@ -82,7 +82,7 @@ public final class SecureCardNumberField: SecureField {
         guard masksNumberWhenInactive, value.count > 4 else { return display(for: value) }
         let masked = String(repeating: "•", count: value.count - 4) + value.suffix(4)
         // Group the bullets the same way as the digits for a stable width.
-        let groups = CardNumberFormatter.groups(for: state.brand, length: value.count)
+        let groups = CardNumberFormatter.groups(for: numberState.brand, length: value.count)
         var result = ""
         var index = masked.startIndex
         for (position, size) in groups.enumerated() where index < masked.endIndex {
@@ -100,14 +100,14 @@ public final class SecureCardNumberField: SecureField {
     }
 
     override var showsInvalidState: Bool {
-        !state.isEmpty && !state.isPotentiallyValid
+        !numberState.isEmpty && !numberState.isPotentiallyValid
     }
 
     override func accessibilityValueForCurrentValue() -> String? {
         guard !rawValue.isEmpty else { return nil }
-        if let lastFour = state.lastFour {
+        if let lastFour = numberState.lastFour {
             let format = NSLocalizedString("%@ ending in %@", comment: "VoiceOver: card brand and last four digits")
-            return String(format: format, state.brand?.displayName ?? NSLocalizedString("Card", comment: ""), lastFour.map(String.init).joined(separator: " "))
+            return String(format: format, numberState.brand?.displayName ?? NSLocalizedString("Card", comment: ""), lastFour.map(String.init).joined(separator: " "))
         }
         let format = NSLocalizedString("%d digits entered", comment: "VoiceOver: partial card number")
         return String(format: format, rawValue.count)
@@ -115,8 +115,8 @@ public final class SecureCardNumberField: SecureField {
 
     override func valueDidChange() {
         let newState = CardNumberState(digits: rawValue, rules: brandRules)
-        guard newState != state else { return }
-        state = newState
+        guard newState != numberState else { return }
+        numberState = newState
         updateBrandImage()
         onStateChange?(newState)
     }
@@ -127,7 +127,7 @@ public final class SecureCardNumberField: SecureField {
             textField.rightViewMode = .never
             return
         }
-        brandImageView.image = provider(state.brand)
+        brandImageView.image = provider(numberState.brand)
         if brandImageView.image != nil {
             brandImageView.frame = CGRect(x: 0, y: 0, width: 32, height: 20)
             textField.rightView = brandImageView

@@ -9,12 +9,12 @@ import UIKit
 /// per PCI DSS, must never be stored anywhere after authorisation.
 @MainActor
 public final class SecureCVCField: SecureField {
-    public private(set) var state: CVCFieldState = .empty
+    public private(set) var cvcState: CVCFieldState = .empty
     public var onStateChange: ((CVCFieldState) -> Void)?
 
     /// The number field whose brand decides the expected length.
     public weak var cardNumberField: SecureCardNumberField? {
-        didSet { brandProvider = { [weak self] in self?.cardNumberField?.state.brand } }
+        didSet { brandProvider = { [weak self] in self?.cardNumberField?.numberState.brand } }
     }
 
     /// Show bullets instead of digits. Default `false`, because the code is short and users
@@ -54,7 +54,7 @@ public final class SecureCVCField: SecureField {
     override var keepsCaretAtEnd: Bool { true }
 
     override var showsInvalidState: Bool {
-        !state.isEmpty && !state.isComplete && !isEditing
+        !cvcState.isEmpty && !cvcState.isComplete && !isEditing
     }
 
     override func accessibilityValueForCurrentValue() -> String? {
@@ -65,8 +65,8 @@ public final class SecureCVCField: SecureField {
 
     override func valueDidChange() {
         let newState = CVCRules.state(digits: rawValue, brand: brand)
-        guard newState != state else { return }
-        state = newState
+        guard newState != cvcState else { return }
+        cvcState = newState
         onStateChange?(newState)
     }
 

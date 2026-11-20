@@ -65,7 +65,7 @@ public final class SecureCardForm: ObservableObject {
             self?.cvcField?.brandDidChange()
             self?.recompute()
         }
-        cvcField?.brandProvider = { [weak field] in field?.state.brand }
+        cvcField?.brandProvider = { [weak field] in field?.numberState.brand }
         recompute()
     }
 
@@ -79,7 +79,7 @@ public final class SecureCardForm: ObservableObject {
         cvcField = field
         field.formCallback = { [weak self] in self?.recompute() }
         if let numberField {
-            field.brandProvider = { [weak numberField] in numberField?.state.brand }
+            field.brandProvider = { [weak numberField] in numberField?.numberState.brand }
         }
         recompute()
     }
@@ -144,9 +144,9 @@ public final class SecureCardForm: ObservableObject {
     // MARK: State
 
     private func recompute() {
-        numberState = numberField?.state ?? .empty
-        expiryState = expiryField?.state ?? .empty
-        cvcState = cvcField?.state ?? .empty
+        numberState = numberField?.numberState ?? .empty
+        expiryState = expiryField?.expiryState ?? .empty
+        cvcState = cvcField?.cvcState ?? .empty
         cardholderName = nameField?.name ?? ""
         isComplete = numberState.isValid
             && (!requiresExpiry || expiryState.isValid)

@@ -5,7 +5,9 @@ import PackageDescription
 let package = Package(
     name: "CDCScanner",
     platforms: [
-        .iOS(.v16)
+        .iOS(.v16),
+        // CDCCore and the tokenisation transport build on macOS; the UI products are iOS only.
+        .macOS(.v12),
     ],
     products: [
         /// Camera scanning of payment cards, built on VisionKit. Re-exports CDCCore.
