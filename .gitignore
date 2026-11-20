@@ -1,0 +1,18 @@
+# Xcode / SwiftPM
+.build/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+xcuserdata/
+DerivedData/
+Package.resolved
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# DocC
+.docc-build/
+
+# macOS
+.DS_Store
