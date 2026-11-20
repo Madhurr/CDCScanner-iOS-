@@ -11,6 +11,17 @@ All notable changes to this project are documented here. The format follows
 First tagged release. This is a rewrite; nothing from the untagged `main` history is API-compatible.
 
 ### Added
+- `CDCSecureFields`, a second product for PCI-conscious card entry: `SecureCardNumberField`,
+  `SecureExpiryField`, `SecureCVCField` and `CardholderNameField` with no `text` on their public
+  API, blocked copy/cut/share, a configurable paste policy, privacy covers during screen capture
+  and in the app switcher, redacted VoiceOver values, live brand detection and per-brand
+  formatting and lengths.
+- `SecureCardForm` to track completeness across fields and tokenise, `SecureCardData` (not
+  `Codable`, redacted descriptions, closure-only access to the PAN), the `CardTokenizer` protocol
+  and `HTTPTokenizer` for any HTTPS JSON vault or payment-provider endpoint.
+- SwiftUI wrappers: `SecureCardNumberTextField`, `SecureExpiryTextField`, `SecureCVCTextField`,
+  `CardholderNameTextField`.
+- `CDCCore` product holding the brand rules, Luhn and parsers shared by both UI products.
 - VisionKit-based camera scanning via `DataScannerViewController`. All recognition stays on device.
 - `CardScannerViewController` (UIKit, delegate-based), `CardScanner.scan(from:)` (`async`/`await`) and
   `CardScannerView` plus a `.cardScanner(isPresented:)` modifier (SwiftUI).

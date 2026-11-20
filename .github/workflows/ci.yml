@@ -25,7 +25,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build \
-            -scheme CDCScanner \
+            -scheme CDCScanner-Package \
             -destination 'generic/platform=iOS Simulator' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO | tail -n 50
@@ -34,7 +34,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -scheme CDCScanner \
+            -scheme CDCScanner-Package \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO | tail -n 100

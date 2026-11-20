@@ -1,5 +1,5 @@
 import XCTest
-@testable import CDCScanner
+@testable import CDCCore
 
 final class ScannedCardTests: XCTestCase {
     func testVisaFormatting() {

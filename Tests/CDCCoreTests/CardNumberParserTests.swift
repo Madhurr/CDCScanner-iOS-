@@ -1,5 +1,5 @@
 import XCTest
-@testable import CDCScanner
+@testable import CDCCore
 
 final class CardNumberParserTests: XCTestCase {
     let parser = CardNumberParser()

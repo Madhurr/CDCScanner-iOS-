@@ -1,3 +1,4 @@
+import CDCCore
 import Foundation
 
 /// Accumulates recognised text across camera frames and decides when a scan is complete.

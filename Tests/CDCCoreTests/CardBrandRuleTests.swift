@@ -1,5 +1,5 @@
 import XCTest
-@testable import CDCScanner
+@testable import CDCCore
 
 final class CardBrandRuleTests: XCTestCase {
     let rules = CardBrandRule.defaults

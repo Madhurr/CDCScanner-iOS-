@@ -1,3 +1,4 @@
+import CDCCore
 import Foundation
 
 /// How hard the recogniser works on each frame.
