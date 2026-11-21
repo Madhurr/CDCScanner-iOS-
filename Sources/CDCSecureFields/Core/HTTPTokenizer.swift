@@ -146,6 +146,10 @@ public struct HTTPTokenizer: CardTokenizer {
     }
 
     func token(from data: Data, for card: SecureCardData) throws -> CardToken {
+        try Self.token(from: data, for: card, tokenPath: tokenPath)
+    }
+
+    static func token(from data: Data, for card: SecureCardData, tokenPath: String) throws -> CardToken {
         guard let json = try? JSONSerialization.jsonObject(with: data),
               let value = Self.value(at: tokenPath, in: json)
         else { throw TokenizationError.malformedResponse }
@@ -166,7 +170,7 @@ public struct HTTPTokenizer: CardTokenizer {
         )
     }
 
-    private static func makeSession() -> URLSession {
+    static func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -179,7 +183,7 @@ public struct HTTPTokenizer: CardTokenizer {
         return URLSession(configuration: configuration, delegate: SameHostRedirectPolicy(), delegateQueue: nil)
     }
 
-    private static func set(_ value: Any, at path: String, in object: inout [String: Any]) {
+    static func set(_ value: Any, at path: String, in object: inout [String: Any]) {
         let parts = path.split(separator: ".").map(String.init)
         guard let first = parts.first else { return }
         if parts.count == 1 {
@@ -191,7 +195,7 @@ public struct HTTPTokenizer: CardTokenizer {
         }
     }
 
-    private static func value(at path: String, in json: Any) -> Any? {
+    static func value(at path: String, in json: Any) -> Any? {
         var current: Any = json
         for part in path.split(separator: ".") {
             guard let dictionary = current as? [String: Any], let next = dictionary[String(part)] else { return nil }

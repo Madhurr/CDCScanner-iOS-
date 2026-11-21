@@ -17,6 +17,10 @@ Two products, one package, zero third-party dependencies:
 - **CDCSecureFields** gives you hardened card-entry fields and a tokenisation transport, so the
   card number goes from the keyboard straight to your vault or payment provider and never passes
   through your own code or servers. See [Secure fields](#secure-fields).
+- **Zero-trust mode** encrypts the card inside the field to a key the phone has cryptographically
+  verified belongs to a specific, open-source enclave build, and proves the request came from a
+  genuine build of your app. No vendor, operator or proxy can read the number. See
+  [Zero-trust tokenisation](#zero-trust-tokenisation) and the reference relay in `relay/`.
 
 ```swift
 let card = try await CardScanner.scan(from: self)
@@ -42,6 +46,7 @@ card.expiry            // 09/27
 - [Configuration](#configuration)
 - [Results](#results)
 - [Secure fields](#secure-fields)
+- [Zero-trust tokenisation](#zero-trust-tokenisation)
 - [Supported brands](#supported-brands)
 - [Using the parser without the camera](#using-the-parser-without-the-camera)
 - [How it works](#how-it-works)
@@ -322,6 +327,57 @@ vault, the attestation and the rest of the controls remain yours.
 The security code is cleared from the field after a successful `tokenize`, because PCI DSS
 forbids retaining it after authorisation. Expiry and cardholder name may be stored and are
 exposed directly.
+
+## Zero-trust tokenisation
+
+Hosted-field vendors ask you to trust that their vault is secure. This mode removes the trust:
+the card number is encrypted inside the field, to a key that lives only inside an AWS Nitro
+enclave running a published open-source image, and the phone verifies the enclave's identity and
+code hash before encrypting anything. In the other direction the enclave verifies, through Apple
+App Attest, that the request came from a genuine build of your app. The full design, threat model
+and PCI reasoning are in [`docs/ZERO_TRUST.md`](docs/ZERO_TRUST.md).
+
+```swift
+import CDCSecureFields
+
+// 1. Who the phone will trust: the AWS Nitro root (built in) and the PCR0 of the relay release you deploy.
+let policy = NitroAttestationPolicy(expectedPCRs: [0: [relayReleasePCR0]])
+
+// 2. Fetch and verify the enclave's attestation; extract the key it generated inside itself.
+let enclave = AttestedEnclaveKeyProvider(url: URL(string: "https://relay.example.com/v1/attestation")!, policy: policy)
+
+// 3. Encrypt in the field, prove app integrity, send ciphertext only.
+let tokenizer = EncryptingTokenizer(
+    url: URL(string: "https://relay.example.com/v1/tokenize")!,
+    recipients: enclave,
+    attestor: AppAttestRequestAttestor()
+)
+let token = try await form.tokenize(using: tokenizer)
+```
+
+What happens on each tap of Pay:
+
+1. The SDK sends a fresh nonce and receives a COSE-signed attestation document. It verifies the
+   certificate chain to the AWS Nitro root, the ES384 signature, the document's age, the nonce,
+   and that PCR0 matches a published release hash. All of this is pure Swift and unit tested;
+   no platform certificate API is involved.
+2. The card is encrypted with ECDH-ES+A256KW and AES-256-GCM to the enclave's key. Add a second
+   recipient (another relay, or a processor that accepts JWE) and the same ciphertext can be
+   opened by either, which gives processor failover without a vault.
+3. An App Attest assertion over the request body is attached. The relay rejects requests that did
+   not come from a genuine, unmodified build of your app, which stops card-testing scripts.
+4. The relay decrypts inside the enclave, Luhn-checks, forwards to the processor, returns only
+   the token. Your backend charges with the token. Nothing you operate ever holds a card number
+   and a key at the same time.
+
+The reference relay is in [`relay/`](relay/README.md): Go, one binary, no database, dev mode
+that runs on a laptop with a self-made attestation chain so the entire flow including PCR pinning
+can be tested before touching AWS. The JOSE layer is verified both ways against Python
+`jwcrypto` and the Go relay decrypts payloads produced by the Swift SDK in its test suite.
+
+**What this does not do.** It does not make you PCI compliant by itself, it has not yet been run
+inside a real Nitro enclave, and no third-party audit has been performed. `docs/ZERO_TRUST.md`
+section 6 sets out what to tell a QSA, and `SECURITY.md` lists the known limits.
 
 ## Supported brands
 

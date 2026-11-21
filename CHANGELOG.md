@@ -11,6 +11,16 @@ All notable changes to this project are documented here. The format follows
 First tagged release. This is a rewrite; nothing from the untagged `main` history is API-compatible.
 
 ### Added
+- Zero-trust tokenisation: `EncryptingTokenizer` encrypts card data inside the field with JOSE JWE
+  (ECDH-ES+A256KW, A256GCM) to one or many recipients; `AttestedEnclaveKeyProvider` and
+  `NitroAttestationVerifier` verify AWS Nitro Enclaves attestation documents (COSE_Sign1, ES384,
+  certificate chain to the pinned AWS root, PCR and nonce policy) in pure Swift;
+  `AppAttestRequestAttestor` proves app integrity to the relay with Apple App Attest. Includes a
+  CBOR decoder, a minimal X.509 parser and JWK types. Interop-tested against `jwcrypto` and `go-jose`.
+- `relay/`: a reference Go relay that publishes attestation documents, decrypts SDK payloads,
+  verifies App Attest, validates cards and tokenises with Stripe or an echo adapter. Dev mode runs
+  on a laptop with a self-made chain; `-tags nitro` targets a real enclave.
+- `docs/ZERO_TRUST.md` design document and threat model; `SECURITY.md`.
 - `CDCSecureFields`, a second product for PCI-conscious card entry: `SecureCardNumberField`,
   `SecureExpiryField`, `SecureCVCField` and `CardholderNameField` with no `text` on their public
   API, blocked copy/cut/share, a configurable paste policy, privacy covers during screen capture

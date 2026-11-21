@@ -1,0 +1,13 @@
+# Reproducible enclave image for cdc-relay. Build with nitro-cli build-enclave.
+FROM golang:1.24-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ENV CGO_ENABLED=0 GOFLAGS=-trimpath
+RUN go build -tags nitro -ldflags="-s -w -buildid=" -o /relay ./cmd/relay
+
+FROM scratch
+COPY --from=build /relay /relay
+ENV RELAY_MODE=nitro RELAY_ADDR=:8080 APP_ATTEST=required
+ENTRYPOINT ["/relay"]

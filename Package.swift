@@ -17,6 +17,11 @@ let package = Package(
         /// Brand rules, Luhn and parsing with no UI dependency.
         .library(name: "CDCCore", targets: ["CDCCore"]),
     ],
+    dependencies: [
+        // CryptoKit is used on Apple platforms. swift-crypto, Apple's open-source implementation of the
+        // same API, is linked only when building on Linux so the encryption code can be tested there.
+        .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
+    ],
     targets: [
         .target(
             name: "CDCCore"
@@ -30,7 +35,10 @@ let package = Package(
         ),
         .target(
             name: "CDCSecureFields",
-            dependencies: ["CDCCore"],
+            dependencies: [
+                "CDCCore",
+                .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux])),
+            ],
             resources: [
                 .copy("Resources/PrivacyInfo.xcprivacy")
             ]
