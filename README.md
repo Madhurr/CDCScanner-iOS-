@@ -1,6 +1,6 @@
 <p align="center">
   <strong>CDCScanner</strong><br>
-  On-device credit and debit card scanning for iOS, built on VisionKit.
+  Card scanning, hardened card entry and zero-trust tokenisation for iOS.
 </p>
 
 <p align="center">
@@ -10,297 +10,196 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT"></a>
 </p>
 
-Two products, one package, zero third-party dependencies:
+An open-source alternative to hosted-field SDKs. It reads cards with the camera, collects card
+details in fields the host app cannot read, and, in zero-trust mode, encrypts the card number
+inside the field to a key the phone has cryptographically verified belongs to a specific
+open-source enclave build. No vendor, operator, proxy or merchant server can read the number.
+Zero third-party dependencies on iOS, no telemetry, MIT licensed.
 
-- **CDCScanner** points the camera at a card and returns its number, brand and expiry as typed
-  Swift values. Recognition runs entirely on device through Apple's `DataScannerViewController`.
-- **CDCSecureFields** gives you hardened card-entry fields and a tokenisation transport, so the
-  card number goes from the keyboard straight to your vault or payment provider and never passes
-  through your own code or servers. See [Secure fields](#secure-fields).
-- **Zero-trust mode** encrypts the card inside the field to a key the phone has cryptographically
-  verified belongs to a specific, open-source enclave build, and proves the request came from a
-  genuine build of your app. No vendor, operator or proxy can read the number. See
-  [Zero-trust tokenisation](#zero-trust-tokenisation) and the reference relay in `relay/`.
+| Product | What it is | Reference |
+|---|---|---|
+| `CDCScanner` | VisionKit camera scanning: number, brand and expiry as typed values | [docs/SCANNER.md](docs/SCANNER.md) |
+| `CDCSecureFields` | Hardened entry fields, form, tokenisation transport, zero-trust encryption and attestation | [docs/SECURE_FIELDS.md](docs/SECURE_FIELDS.md), [docs/ZERO_TRUST.md](docs/ZERO_TRUST.md) |
+| `CDCCore` | Brand rules, Luhn, parsers; shared by both and usable on its own | source |
+| `relay/` | Reference tokenisation relay for AWS Nitro Enclaves (Go) | [relay/README.md](relay/README.md) |
+
+## Contents
+
+- [Architecture](#architecture)
+- [Security model](#security-model)
+- [Quick start](#quick-start)
+- [Requirements and installation](#requirements-and-installation)
+- [Verification status](#verification-status)
+- [Repository layout](#repository-layout)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Architecture
+
+### Package layout
+
+Three Swift products share one core. UI products are `#if os(iOS)`; the core and the cryptography
+build and test on Linux and macOS as well, which is how the parsing and crypto are exercised on every
+push without a device.
+
+```mermaid
+flowchart TB
+    subgraph core["CDCCore (Foundation only)"]
+        rules["CardBrandRule<br/>issuer prefixes and lengths"]
+        luhn["Luhn"]
+        parsers["CardNumberParser · ExpiryParser"]
+        model["CardBrand · CardExpiry · ScannedCard"]
+    end
+    subgraph scanner["CDCScanner"]
+        vk["CardScannerViewController<br/>VisionKit DataScanner"]
+        session["ScanSession<br/>multi-frame confirmation"]
+        swiftui1["CardScannerView · CardScanner.scan()"]
+    end
+    subgraph fields["CDCSecureFields"]
+        ui["SecureCardNumberField · Expiry · CVC · Name<br/>SecureCardForm"]
+        tok["HTTPTokenizer · EncryptingTokenizer"]
+        crypto["JWE · JWK · Concat KDF"]
+        attest["NitroAttestationVerifier<br/>CBOR · COSE · X.509"]
+        aa["AppAttestRequestAttestor"]
+    end
+    core --> scanner
+    core --> fields
+    vk --> session --> parsers
+    ui --> tok
+    tok --> crypto
+    tok --> attest
+    tok --> aa
+```
+
+### Data flow in zero-trust mode
+
+The card number exists in three places only: the field, enclave memory, and the payment
+processor. Everything in between carries ciphertext it has no key for.
+
+```mermaid
+flowchart LR
+    subgraph phone["Phone: your app"]
+        F["Secure field<br/>PAN"] --> T["EncryptingTokenizer<br/>JWE to key K"]
+        A["App Attest<br/>assertion"] --> T
+    end
+    subgraph merchant["Your backend · CDN · proxies"]
+        E["forwards<br/>ciphertext only"]
+    end
+    subgraph aws["AWS EC2 parent (operator cannot read enclave memory)"]
+        R["cdc-relay in Nitro enclave<br/>key K · decrypt · Luhn · forward · forget"]
+    end
+    P["Payment processor<br/>PAN"]
+    T -. "nonce out, signed {PCRs, K} back" .-> R
+    T -- "JWE" --> E -- "unchanged" --> R
+    R -- "card over TLS" --> P
+    P -- "token" --> R -- "token, brand, last 4" --> T
+    T -- "token only" --> E -- "charge(token)" --> P
+```
+
+Two verifications bracket every payment:
+
+1. **The phone verifies the enclave** before encrypting anything. It fetches an attestation
+   document with a fresh nonce, validates the certificate chain to the pinned AWS Nitro root,
+   verifies the ES384 signature, and requires the document to be fresh, the nonce to match, and
+   PCR0 (the hash of the enclave image) to equal a published release value. Only then does it
+   extract the enclave's key. This runs in pure Swift with no platform certificate API.
+2. **The enclave verifies the phone** before decrypting anything. Apple App Attest proves the
+   request came from a genuine, unmodified build of your app on a real device; a monotonic counter
+   defeats replay. This is what stops card-testing scripts.
+
+The full design, cryptographic choices, sequence diagram, threat model and the PCI reasoning are
+in [docs/ZERO_TRUST.md](docs/ZERO_TRUST.md).
+
+### Scanning pipeline
+
+```mermaid
+flowchart LR
+    cam["DataScannerViewController<br/>region of interest = card guide"] --> txt["recognised text per frame"]
+    txt --> np["CardNumberParser<br/>digit runs · Luhn · most specific issuer range"]
+    txt --> ep["ExpiryParser<br/>MM/YY · latest wins"]
+    np --> ss["ScanSession<br/>votes across frames"]
+    ep --> ss
+    ss -- "N frames agree" --> card["ScannedCard<br/>number · brand · expiry"]
+```
+
+A single OCR frame is never trusted. Candidates are Luhn-checked, matched to the most specific
+issuer range for their length, and must be read identically on `requiredConfirmations` frames
+(default 3) before the card is reported.
+
+## Security model
+
+### What each layer guarantees
+
+| Layer | Guarantee | Mechanism |
+|---|---|---|
+| Fields | Host code cannot obtain the number | No `text` on the public API; state exposes brand, validity, BIN and last four only |
+| Fields | Nothing copies it out | Copy, cut, share, look-up blocked; paste sanitised or disabled; autocorrect and predictive text off |
+| Fields | It is not in snapshots or recordings | Covered while the app is inactive and while the screen is captured; screenshot callback |
+| Fields | Assistive tech hears a redacted value | VoiceOver reads "Visa ending in 1 1 1 1" |
+| `SecureCardData` | It cannot leak through logging or serialisation | Not `Codable`; `description`, `debugDescription`, `dump` and the debugger show the masked number; the PAN is reachable only inside `withNumber { }` |
+| `HTTPTokenizer` | Goes only where you point it, over TLS | HTTPS required, no cross-host redirects, ephemeral session, no cache, no cookies |
+| `EncryptingTokenizer` | Nobody on the path can read it | JWE (ECDH-ES+A256KW, A256GCM) to verified recipient keys, encrypted before TLS; `typ`, `iat`, `nonce` authenticated in the header |
+| `NitroAttestationVerifier` | The key belongs to known code | Chain to pinned AWS root, ES384 signature, PCR pinning, nonce, age, debug-mode refusal |
+| `AppAttestRequestAttestor` | Requests come from your real app | Apple App Attest assertion over the body hash with an increasing counter |
+| Relay | Decrypts only inside the enclave, stores nothing | Key generated at boot and never exported; nonce replay cache; iat window; Luhn; plaintext zeroed; no card logging |
+
+### Cryptography
+
+| Purpose | Choice |
+|---|---|
+| Content encryption | AES-256-GCM, 96-bit IV, header as additional authenticated data |
+| Key management | ECDH-ES with AES-256 key wrap on P-256; one wrapped content key per recipient, so a single ciphertext can be opened by a relay or a backup processor |
+| Attestation signature | ES384 over COSE_Sign1, fixed by AWS Nitro |
+| Chain of trust | AWS Nitro Enclaves root G1, SHA-256 `641a0321a3e244efe456463195d606317ed7cdcc3c1756e09893f3c68f79bb5b`, checked in tests against the certificate AWS publishes |
+| App integrity | Apple App Attest, ES256, chain to Apple App Attestation Root CA |
+| Transport | TLS 1.2+, HTTPS only; pinning via a custom `URLSession` |
+
+### Interoperability checks
+
+The JOSE layer is verified both ways against Python `jwcrypto`. The Go relay decrypts payloads
+produced by the Swift SDK. Attestation test fixtures are generated independently with `cbor2` and
+`cryptography`, and the pinned AWS root constant is tested against the real certificate.
+
+### What is not claimed
+
+- **Compliance.** A library cannot make an app PCI DSS compliant. PCI SSC FAQ 1086 says
+  encryption alone does not remove data from scope; FAQ 1233 says an entity holding only data it
+  cannot decrypt may be able to treat it as out of scope. This design is built to meet the second
+  statement literally and to show a QSA the code that proves it. Which SAQ applies is the
+  acquirer's decision.
+- **Memory zeroing on iOS.** Swift strings cannot be zeroed and UIKit retains displayed text.
+  The fields minimise copies and lifetime; they do not claim the impossible.
+- **Hardware runs.** The relay's enclave path compiles against the Nitro NSM API and runs in dev
+  mode with a self-made chain; it has not yet been run inside a real Nitro enclave. App Attest has
+  not yet been exercised with a real Apple attestation. No third-party audit has been performed.
+
+See [SECURITY.md](SECURITY.md) for the disclosure policy and
+[docs/ZERO_TRUST.md](docs/ZERO_TRUST.md) section 7 for the full threat model.
+
+## Quick start
+
+### Scan a card
 
 ```swift
+import CDCScanner
+
 let card = try await CardScanner.scan(from: self)
 card.formattedNumber   // "4111 1111 1111 1111"
 card.brand             // .visa
 card.expiry            // 09/27
 ```
 
-- **Three ways in.** UIKit delegate, `async`/`await`, or SwiftUI.
-- **Accurate by design.** Every read is Luhn-checked, matched to a brand's issuer ranges and
-  length, and confirmed across several frames before it is reported.
-- **Testable core.** Parsing is pure Swift with no camera dependency and is covered by unit tests
-  that run on macOS and Linux as well as iOS.
-- **Configurable.** Restrict brands, add your own, skip the expiry, tune quality and confirmations.
-- **Ships the paperwork.** Privacy manifest, DocC comments, strict-concurrency clean, CI on every push.
-- **No phoning home.** Unlike hosted-field SDKs, nothing here sends analytics or telemetry anywhere.
+SwiftUI: `.cardScanner(isPresented: $isScanning) { card in … }`. Check `CardScanner.isSupported`
+first; VisionKit's live scanner needs an A12 chip or newer and does not run on the simulator.
 
-## Contents
-
-- [Requirements](#requirements)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Configuration](#configuration)
-- [Results](#results)
-- [Secure fields](#secure-fields)
-- [Zero-trust tokenisation](#zero-trust-tokenisation)
-- [Supported brands](#supported-brands)
-- [Using the parser without the camera](#using-the-parser-without-the-camera)
-- [How it works](#how-it-works)
-- [Privacy and PCI](#privacy-and-pci)
-- [Troubleshooting](#troubleshooting)
-- [Migrating from the untagged API](#migrating-from-the-untagged-api)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Requirements
-
-| Requirement | Minimum |
-|---|---|
-| iOS | 16.0 |
-| Swift / Xcode | Swift 5.9, Xcode 15 |
-| Hardware | A12 Bionic or newer (iPhone XS / XR, 2018 onwards). VisionKit's live scanner does not run on the simulator. |
-| Info.plist | `NSCameraUsageDescription` |
-
-Check `CardScanner.isSupported` before showing a scan button, and keep a manual-entry path for
-devices that return `false`.
-
-## Installation
-
-In Xcode choose **File ▸ Add Package Dependencies…** and paste the repository URL, or add it to
-your `Package.swift`:
-
-```swift
-dependencies: [
-    .package(url: "https://github.com/Madhurr/CDCScanner-iOS-.git", from: "1.0.0")
-],
-targets: [
-    .target(name: "YourApp", dependencies: [
-        .product(name: "CDCScanner", package: "CDCScanner-iOS-"),      // camera scanning
-        .product(name: "CDCSecureFields", package: "CDCScanner-iOS-"), // card entry + tokenisation
-    ])
-]
-```
-
-Add whichever products you need; both re-export the shared `CDCCore` types.
-
-## Usage
-
-### SwiftUI
-
-```swift
-import CDCScanner
-import SwiftUI
-
-struct PaymentForm: View {
-    @State private var isScanning = false
-    @State private var cardNumber = ""
-
-    var body: some View {
-        Form {
-            TextField("Card number", text: $cardNumber)
-            Button("Scan card") { isScanning = true }
-                .disabled(!CardScanner.isSupported)
-        }
-        .cardScanner(isPresented: $isScanning) { card in
-            cardNumber = card.formattedNumber
-        }
-    }
-}
-```
-
-The modifier presents the scanner full screen and resets the binding on scan, cancel or error.
-`CardScannerView` is also available directly if you want to host it yourself.
-
-### UIKit with `async`/`await`
-
-```swift
-import CDCScanner
-
-func scanCard() async {
-    do {
-        let card = try await CardScanner.scan(from: self)
-        numberField.text = card.formattedNumber
-        expiryField.text = card.expiry?.formatted ?? ""
-        brandLabel.text = card.brand.displayName
-    } catch is CancellationError {
-        // User tapped Cancel.
-    } catch {
-        presentAlert(error.localizedDescription)
-    }
-}
-```
-
-The scanner is presented full screen and dismissed before the call returns.
-
-### UIKit with a delegate
-
-```swift
-import CDCScanner
-
-final class CheckoutViewController: UIViewController, CardScannerDelegate {
-    func scanTapped() {
-        let scanner = CardScannerViewController()
-        scanner.delegate = self
-        present(scanner, animated: true)
-    }
-
-    func cardScanner(_ scanner: CardScannerViewController, didScan card: ScannedCard) {
-        dismiss(animated: true)
-        print(card.maskedNumber, card.brand, card.expiry ?? "no expiry")
-    }
-
-    func cardScannerDidCancel(_ scanner: CardScannerViewController) {
-        dismiss(animated: true)
-    }
-
-    func cardScanner(_ scanner: CardScannerViewController, didFailWith error: CardScannerError) {
-        dismiss(animated: true)
-    }
-}
-```
-
-Like `UIImagePickerController`, the controller does not dismiss itself; the delegate decides.
-Call `restartScanning()` to scan another card without dismissing.
-
-## Configuration
-
-```swift
-var configuration = ScannerConfiguration()
-configuration.brandRules = CardBrandRule.defaults(for: [.visa, .mastercard, .americanExpress])
-configuration.requiresExpiry = false          // finish as soon as the number is confirmed
-configuration.requiredConfirmations = 4       // frames that must agree (default 3)
-configuration.recognitionQuality = .accurate  // .fast, .balanced (default) or .accurate
-configuration.title = "Add a card"
-configuration.instructions = "Line the card up inside the frame"
-
-let card = try await CardScanner.scan(from: self, configuration: configuration)
-```
-
-| Option | Default | Effect |
-|---|---|---|
-| `brandRules` | `CardBrandRule.defaults` | Which brands are accepted and how they are recognised. |
-| `requiredConfirmations` | `3` | Frames that must agree before a value is accepted. |
-| `requiresExpiry` | `true` | Keep looking for an expiry after the number is confirmed. |
-| `expiryTimeout` | `5` s | Give up on the expiry after this long and return the number alone. |
-| `recognitionQuality` | `.balanced` | Passed through to VisionKit. |
-| `showsCardGuide` | `true` | Draw the card-shaped frame. |
-| `restrictsRecognitionToGuide` | `true` | Only read text inside the frame. |
-| `showsTorchButton` | `true` | Offer a flashlight toggle on devices that have one. |
-| `title`, `instructions` | – | On-screen text. Pass localised strings. |
-
-### Custom brands
-
-Teach the scanner about a store card or any network it does not know:
-
-```swift
-let storeCard = CardBrandRule(brand: .custom("Acme Rewards"), prefix: 9000, lengths: [16])
-configuration.brandRules = CardBrandRule.defaults + [storeCard]
-```
-
-A rule takes exact prefixes (`[34, 37]`), ranges (`2221...2720`) or a mix, plus the lengths the
-network issues. When several rules match, the longest prefix wins, so a specific rule can sit
-inside a broader one.
-
-## Results
-
-```swift
-public struct ScannedCard {
-    let number: String        // "4111111111111111"
-    let brand: CardBrand      // .visa
-    let expiry: CardExpiry?   // 09/27, nil if the card shows none or it timed out
-
-    var formattedNumber: String  // "4111 1111 1111 1111" (Amex: "3782 822463 10005")
-    var maskedNumber: String     // "•••• •••• •••• 1111"
-    var lastFour: String         // "1111"
-}
-```
-
-`CardExpiry` exposes `month`, a four-digit `year`, `formatted` (`"09/27"`) and
-`isExpired(asOf:)`. Every result type is `Hashable`, `Sendable` and `Codable`.
-
-## Secure fields
-
-`CDCSecureFields` is an open alternative to hosted-field SDKs such as VGS Collect. The fields
-collect the card number, expiry, security code and name, and hand the data straight to a
-tokeniser. Your view controllers, view models and servers only ever see a token, the brand, the
-BIN and the last four digits.
-
-### What the fields do that a `UITextField` does not
-
-| Protection | Detail |
-|---|---|
-| No `text` on the public API | The number is unreachable from host code. Observe `numberState` (brand, validity, BIN, last four) instead. |
-| Copy, cut, share and look-up blocked | The edit menu offers paste only. `pastePolicy = .disabled` removes that too. |
-| Keyboard cannot learn the value | Autocorrection, predictive text, spell checking and smart punctuation are off. |
-| Hidden from the app switcher | Contents are covered while the app is inactive, so the snapshot shows bullets. |
-| Hidden from screen recording | Contents are covered while the screen is recorded, mirrored or shared. |
-| Screenshot callback | iOS cannot block screenshots, but `onScreenshotTaken` lets you warn the user or log it. |
-| Redacted accessibility | VoiceOver hears "Visa ending in 1 1 1 1", never the full number. |
-| Redacted everywhere else | `SecureCardData` is not `Codable`; `print`, string interpolation, `dump` and the debugger show the masked number. |
-| Live validation | Brand detected from the first digits, grouping and maximum length follow the brand, Luhn checked on every keystroke, expiry checked against today. |
-| Honest about limits | iOS strings cannot be zeroed and UIKit keeps the displayed text in its own memory. The fields minimise copies and lifetime; they do not claim the impossible. |
-
-### UIKit
+### Collect a card and tokenise to any HTTPS vault
 
 ```swift
 import CDCSecureFields
 
-let numberField = SecureCardNumberField()
-let expiryField = SecureExpiryField()
-let cvcField = SecureCVCField()
-numberField.placeholder = "Card number"
-
 let form = SecureCardForm()
 form.attach(numberField: numberField, expiryField: expiryField, cvcField: cvcField)
 
-form.$isComplete
-    .receive(on: RunLoop.main)
-    .assign(to: \.isEnabled, on: payButton)
-    .store(in: &cancellables)
-
-numberField.onStateChange = { state in
-    brandLabel.text = state.brand?.displayName
-}
-
-// Pay button:
-let token = try await form.tokenize(using: tokenizer)
-await backend.charge(token: token.value)  // your server never sees the PAN
-```
-
-### SwiftUI
-
-```swift
-struct CheckoutView: View {
-    @StateObject private var form = SecureCardForm()
-
-    var body: some View {
-        VStack(spacing: 12) {
-            SecureCardNumberTextField(form: form, placeholder: "Card number")
-            HStack(spacing: 12) {
-                SecureExpiryTextField(form: form)
-                SecureCVCTextField(form: form)
-            }
-            Button("Pay") {
-                Task { let token = try await form.tokenize(using: tokenizer) }
-            }
-            .disabled(!form.isComplete)
-        }
-    }
-}
-```
-
-### Tokenisation
-
-`HTTPTokenizer` posts JSON to any HTTPS endpoint, refuses plain HTTP, never follows a redirect
-to another host, uses an ephemeral session with caching and cookies off, and reads the token
-back from a configurable key path. Field names are mapped, so it fits VGS inbound routes, Basis
-Theory, Evervault, Skyflow, or a payment provider's client-side tokenisation API:
-
-```swift
 let tokenizer = HTTPTokenizer(
     url: URL(string: "https://vault.example.com/v1/tokens")!,
     headers: ["Authorization": "Bearer pk_live_…"],
@@ -308,45 +207,15 @@ let tokenizer = HTTPTokenizer(
                    expiryYear: "card.exp_year", securityCode: "card.cvc"),
     tokenPath: "data.id"
 )
+let token = try await form.tokenize(using: tokenizer)   // your code never sees the PAN
 ```
 
-Pass your own `URLSession` to add certificate pinning. For a provider SDK that does not speak
-JSON, implement `CardTokenizer` yourself; `form.makeCardData()` gives you a `SecureCardData` whose
-number is only reachable inside `withNumber { }`, which keeps every access point easy to find in
-code review.
-
-### What this does and does not do for PCI DSS
-
-A text field cannot make an app compliant. What reduces your scope is the data flow: when the PAN
-goes from the field directly to a PCI DSS certified vault or payment provider and only a token
-reaches your backend, your servers never store, process or transmit cardholder data, which is
-what lets most merchants attest with SAQ A or SAQ A-EP rather than SAQ D. `CDCSecureFields`
-gives you the client half of that design and keeps the number out of your app's code paths. The
-vault, the attestation and the rest of the controls remain yours.
-
-The security code is cleared from the field after a successful `tokenize`, because PCI DSS
-forbids retaining it after authorisation. Expiry and cardholder name may be stored and are
-exposed directly.
-
-## Zero-trust tokenisation
-
-Hosted-field vendors ask you to trust that their vault is secure. This mode removes the trust:
-the card number is encrypted inside the field, to a key that lives only inside an AWS Nitro
-enclave running a published open-source image, and the phone verifies the enclave's identity and
-code hash before encrypting anything. In the other direction the enclave verifies, through Apple
-App Attest, that the request came from a genuine build of your app. The full design, threat model
-and PCI reasoning are in [`docs/ZERO_TRUST.md`](docs/ZERO_TRUST.md).
+### Zero-trust mode
 
 ```swift
-import CDCSecureFields
-
-// 1. Who the phone will trust: the AWS Nitro root (built in) and the PCR0 of the relay release you deploy.
 let policy = NitroAttestationPolicy(expectedPCRs: [0: [relayReleasePCR0]])
-
-// 2. Fetch and verify the enclave's attestation; extract the key it generated inside itself.
 let enclave = AttestedEnclaveKeyProvider(url: URL(string: "https://relay.example.com/v1/attestation")!, policy: policy)
 
-// 3. Encrypt in the field, prove app integrity, send ciphertext only.
 let tokenizer = EncryptingTokenizer(
     url: URL(string: "https://relay.example.com/v1/tokenize")!,
     recipients: enclave,
@@ -355,142 +224,85 @@ let tokenizer = EncryptingTokenizer(
 let token = try await form.tokenize(using: tokenizer)
 ```
 
-What happens on each tap of Pay:
+Run the relay locally with `cd relay && go run ./cmd/relay`; dev mode produces attestation
+documents from a self-made chain so the whole flow, including PCR pinning, works on a laptop.
 
-1. The SDK sends a fresh nonce and receives a COSE-signed attestation document. It verifies the
-   certificate chain to the AWS Nitro root, the ES384 signature, the document's age, the nonce,
-   and that PCR0 matches a published release hash. All of this is pure Swift and unit tested;
-   no platform certificate API is involved.
-2. The card is encrypted with ECDH-ES+A256KW and AES-256-GCM to the enclave's key. Add a second
-   recipient (another relay, or a processor that accepts JWE) and the same ciphertext can be
-   opened by either, which gives processor failover without a vault.
-3. An App Attest assertion over the request body is attached. The relay rejects requests that did
-   not come from a genuine, unmodified build of your app, which stops card-testing scripts.
-4. The relay decrypts inside the enclave, Luhn-checks, forwards to the processor, returns only
-   the token. Your backend charges with the token. Nothing you operate ever holds a card number
-   and a key at the same time.
+## Requirements and installation
 
-The reference relay is in [`relay/`](relay/README.md): Go, one binary, no database, dev mode
-that runs on a laptop with a self-made attestation chain so the entire flow including PCR pinning
-can be tested before touching AWS. The JOSE layer is verified both ways against Python
-`jwcrypto` and the Go relay decrypts payloads produced by the Swift SDK in its test suite.
-
-**What this does not do.** It does not make you PCI compliant by itself, it has not yet been run
-inside a real Nitro enclave, and no third-party audit has been performed. `docs/ZERO_TRUST.md`
-section 6 sets out what to tell a QSA, and `SECURITY.md` lists the known limits.
-
-## Supported brands
-
-| Brand | Prefixes | Lengths |
-|---|---|---|
-| Visa | 4 | 13, 16, 19 |
-| Mastercard | 51–55, 2221–2720 | 16 |
-| American Express | 34, 37 | 15 |
-| Discover | 6011, 622126–622925, 644–649, 65 | 16–19 |
-| Diners Club | 300–305, 36, 38–39 | 14–19 |
-| JCB | 3528–3589 | 16–19 |
-| UnionPay | 62 | 16–19 |
-| Maestro | 5018, 5020, 5038, 5893, 6304, 67 | 12–19 |
-| RuPay | 60, 6521–6522, 81–82, 508 | 16 |
-| Mir | 2200–2204 | 16 |
-| Dankort | 5019 | 16 |
-| China T-Union | 31 | 19 |
-| InterPayment | 636 | 16–19 |
-| UATP | 1 | 15 |
-| NPS Pridnestrovie | 6054740–6054744 | 16 |
-
-Issuer ranges live in `CardBrandRule.defaults`. Pull requests that update them are welcome.
-
-## Using the parser without the camera
-
-The parsing layer has no UIKit or VisionKit dependency, so you can run it on text from any OCR
-source, on the server, or in unit tests:
+| Requirement | Minimum |
+|---|---|
+| iOS | 16.0 |
+| Swift / Xcode | Swift 5.9, Xcode 15 |
+| Camera scanning hardware | A12 Bionic or newer; not available on the simulator |
+| App Attest | Physical device; not available on the simulator |
+| Info.plist | `NSCameraUsageDescription` when using `CDCScanner` |
 
 ```swift
-let parser = CardNumberParser()
-parser.parse("4111 1111 1111 1111")
-// [CardNumberMatch(number: "4111111111111111", brand: .visa)]
-
-ExpiryParser().bestExpiry(in: "VALID THRU 09/27")
-// CardExpiry(month: 9, year: 2027)
-
-var session = ScanSession()
-for frame in recognisedFrames {           // [[String]] – one array of text lines per frame
-    if let card = session.ingest(frame) {
-        print(card)
-        break
-    }
-}
+dependencies: [
+    .package(url: "https://github.com/Madhurr/CDCScanner-iOS-.git", from: "1.0.0")
+],
+targets: [
+    .target(name: "YourApp", dependencies: [
+        .product(name: "CDCScanner", package: "CDCScanner-iOS-"),
+        .product(name: "CDCSecureFields", package: "CDCScanner-iOS-"),
+    ])
+]
 ```
 
-## How it works
+Both UI products re-export `CDCCore`. On Apple platforms there are no third-party dependencies;
+Apple's open-source `swift-crypto` is linked only when building on Linux, for tests.
 
-1. `DataScannerViewController` streams recognised text, restricted to the card-shaped region of
-   interest so background text is never considered.
-2. `CardNumberParser` pulls digit runs out of each frame, repairs numbers that OCR split across
-   lines or glued to a stray digit, Luhn-checks every candidate and matches it to the most specific
-   issuer range for its length.
-3. `ExpiryParser` collects `MM/YY` and `MM/YYYY` dates and prefers the latest, which is the
-   "valid thru" on every common layout.
-4. `ScanSession` counts votes across frames and only reports a card once
-   `requiredConfirmations` frames agree, then waits up to `expiryTimeout` for an expiry before
-   returning.
+## Verification status
 
-## Privacy and PCI
+| Area | Verified | How |
+|---|---|---|
+| Parsing, brand rules, Luhn, expiry | Yes | Unit tests on Linux, macOS, iOS Simulator |
+| Field formatting, state, CVC and expiry rules | Yes | Unit tests |
+| JWE encryption and decryption | Yes | Round trips; jwcrypto both ways; go-jose decrypts Swift output |
+| Nitro attestation verification | Yes | Independently generated documents: genuine, tampered, foreign root, wrong PCR, debug mode, stale, expired leaf |
+| AWS root pin | Yes | Constant compared with the published certificate |
+| Relay HTTP flow | Yes | End-to-end test with replay, expiry and garbage rejection |
+| App Attest verification logic | Partly | Synthetic chain in Go; not yet a real Apple attestation |
+| Relay inside a real Nitro enclave | No | Builds with `-tags nitro`; first hardware run pending |
+| UIKit field behaviour on a device | No | Compiles on iOS Simulator in CI; hands-on pass pending |
+| Third-party audit | No | Planned; see SECURITY.md |
 
-- All processing is on device. The library makes no network requests and the bundled
-  `PrivacyInfo.xcprivacy` declares no tracking, no collected data and no required-reason APIs.
-- Treat `ScannedCard.number` as cardholder data. Pass it straight to your payment provider's SDK
-  or tokenisation endpoint, show the user `maskedNumber`, and never write the full number to logs,
-  analytics or crash reports.
-- Scanning only reads what is printed on the card. It does not read the CVV from the back, and it
-  cannot replace your provider's validation.
+Every push runs three CI jobs: iOS Simulator build and tests, macOS tests under strict
+concurrency with warnings as errors, and the Go relay with `gofmt`, `go vet`, the `nitro` build
+tag and tests.
 
-## Troubleshooting
+## Repository layout
 
-**Nothing happens, or `didFailWith` reports `unsupportedDevice`.** VisionKit's live scanner needs
-an A12 chip or newer and does not run on the simulator. Test on a physical device and gate the
-button on `CardScanner.isSupported`.
-
-**`cameraAccessDenied`.** The user declined camera access or it is restricted by a device policy.
-Offer a link to `UIApplication.openSettingsURLString`.
-
-**The number is read but the expiry comes back `nil`.** Embossed expiry dates on dark cards can
-be hard to read. Try `recognitionQuality = .accurate`, encourage the torch, or set
-`requiresExpiry = false` and ask for the expiry manually.
-
-**A wrong number was accepted.** Raise `requiredConfirmations`, or restrict `brandRules` to the
-brands you actually accept so fewer candidates qualify.
-
-## Migrating from the untagged API
-
-The `main` branch before 1.0.0 was never tagged, so it could not be resolved by Swift Package
-Manager and is not source compatible. If you vendored it:
-
-| Before | Now |
-|---|---|
-| `CDCScanner().startScanner(viewController:)` | `CardScannerViewController` + `present`, or `CardScanner.scan(from:)` |
-| `CDCScannerDelegate.ccScannerCompleted(cardNumber:expDate:cardType:)` | `CardScannerDelegate.cardScanner(_:didScan:)` with a `ScannedCard` |
-| `CardType` string raw values | `CardBrand` enum with `displayName` |
-| `Card(binRange:lengthRange:)` + `addCustomCards` | `CardBrandRule(brand: .custom(...), prefix:, lengths:)` |
-| `recognitionLevel` | `ScannerConfiguration.recognitionQuality` and `requiredConfirmations` |
-| iOS 13 minimum | iOS 16 minimum |
+```
+Sources/
+  CDCCore/            brand rules, Luhn, parsers, result types
+  CDCScanner/         VisionKit scanner, ScanSession, SwiftUI wrapper
+  CDCSecureFields/
+    UIKit/            SecureField base, number/expiry/CVC/name fields, SecureCardForm
+    SwiftUI/          UIViewRepresentable wrappers
+    Core/             formatter, states, SecureCardData, CardTokenizer, HTTPTokenizer
+    Crypto/           JWE, JWK, Concat KDF, base64url
+    Attestation/      CBOR, COSE_Sign1, minimal X.509, Nitro verifier, AWS root
+    ZeroTrust/        EncryptingTokenizer, key providers, App Attest attestor
+Tests/                one test target per product, 107 tests
+relay/                Go reference relay: attestation, JWE decrypt, App Attest, PSP adapters
+docs/                 SCANNER.md, SECURE_FIELDS.md, ZERO_TRUST.md
+```
 
 ## Contributing
 
-Issues and pull requests are welcome. Run the core tests with `swift test` on any platform, or the
-full suite on an iOS simulator:
+Issues and pull requests are welcome. Please add a test for any change to parsing, brand rules,
+cryptography or attestation, and read [SECURITY.md](SECURITY.md) before reporting a
+vulnerability.
 
 ```bash
-xcodebuild test -scheme CDCScanner-Package -destination 'platform=iOS Simulator,name=iPhone 16'
+swift test                                   # core, fields, crypto, attestation on any platform
+xcodebuild test -scheme CDCScanner-Package \
+  -destination 'platform=iOS Simulator,name=iPhone 16'
+cd relay && go test ./...
 ```
 
-CI runs both on every push. Please add a test for any change to parsing or brand rules.
-
-## Author
-
-Built and maintained by [Madhur Jain](https://github.com/Madhurr). Questions and feedback are best
-raised as [GitHub issues](https://github.com/Madhurr/CDCScanner-iOS-/issues).
+Built and maintained by [Madhur Jain](https://github.com/Madhurr).
 
 ## License
 
