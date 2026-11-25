@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="686" viewBox="0 0 920 686" role="img" aria-labelledby="title description">
+  <title id="title">Card entry and tokenization in CDCScanner</title>
+  <desc id="description">The merchant app can use a camera scan to fill SecureCardForm, or accept typed input. HTTPTokenizer sends card fields to a compatible vault over HTTPS. On the experimental path, EncryptingTokenizer sends JWE to a reference relay that decrypts it and contacts the processor. Both paths return a CardToken to the app.</desc>
+  <defs>
+    <pattern id="paper" width="18" height="18" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r=".75" fill="#647e87" opacity=".21"/>
+    </pattern>
+    <marker id="ink-tip" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="m1 1 5 3-5 3" fill="none" stroke="#617986" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="direct-tip" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="m1 1 6 3.5L1 8" fill="none" stroke="#167267" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="relay-tip" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="m1 1 6 3.5L1 8" fill="none" stroke="#765395" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+      .scope { font-size: 17px; font-weight: 650; fill: #233e49; }
+      .name { font-size: 22px; font-weight: 650; fill: #142e39; }
+      .detail { font-size: 16px; fill: #3e5863; }
+      .direct-label { font-size: 16px; font-weight: 600; fill: #125f56; }
+      .relay-label { font-size: 16px; font-weight: 600; fill: #684786; }
+      .wire { fill: none; stroke-width: 2.1; stroke-linejoin: round; stroke-linecap: round; }
+    </style>
+  </defs>
+
+  <rect x="1" y="1" width="918" height="684" rx="16" fill="#f8fafb" stroke="#c8d4d9"/>
+  <rect x="2" y="2" width="916" height="682" rx="15" fill="url(#paper)"/>
+  <!-- On-device collection and the two interchangeable CardTokenizer implementations. -->
+  <rect x="24" y="24" width="872" height="269" rx="13" fill="#eaf0f3" stroke="#bbcbd2"/>
+  <g transform="translate(47 39)" fill="none" stroke="#274551" stroke-width="1.8">
+    <rect x="0" y="0" width="12" height="19" rx="3"/><path d="M4 15.5h4"/>
+  </g>
+  <text x="71" y="55" class="scope">Merchant app · iPhone</text>
+  <rect x="47" y="76" width="285" height="75" rx="9" fill="#fff" stroke="#b7c8cf"/>
+  <text x="66" y="107" class="name">CDCScanner</text>
+  <text x="66" y="132" class="detail">Optional VisionKit camera scan</text>
+  <path d="M332 114H502" class="wire" stroke="#617986" marker-end="url(#ink-tip)"/>
+  <text x="417" y="102" text-anchor="middle" class="detail">Prefill</text>
+  <rect x="507" y="76" width="366" height="75" rx="9" fill="#fff" stroke="#b7c8cf"/>
+  <text x="526" y="107" class="name">SecureCardForm</text>
+  <text x="526" y="132" class="detail">Number, expiry and security code</text>
+
+  <path d="M690 151V175H235V195" class="wire" stroke="#167267" marker-end="url(#direct-tip)"/>
+  <path d="M690 175V195" class="wire" stroke="#765395" marker-end="url(#relay-tip)"/>
+  <circle cx="690" cy="175" r="3.6" fill="#405d67"/>
+  <rect x="47" y="200" width="376" height="73" rx="9" fill="#dcf2ed" stroke="#76aea5"/>
+  <text x="66" y="230" class="name">HTTPTokenizer</text>
+  <text x="66" y="254" class="detail">Maps card fields to the vault’s JSON format</text>
+  <rect x="497" y="200" width="376" height="73" rx="9" fill="#f0eaf7" stroke="#ae94c7"/>
+  <text x="516" y="230" class="name">EncryptingTokenizer</text>
+  <text x="516" y="254" class="detail">Encrypts to the verified relay key</text>
+
+  <!-- Request paths. The direct path terminates at a vault; the experimental path uses a relay. -->
+  <path d="M235 273V344" class="wire" stroke="#167267" marker-end="url(#direct-tip)"/>
+  <text x="251" y="321" class="direct-label">Card fields over HTTPS</text>
+  <path d="M685 273V344" class="wire" stroke="#765395" marker-end="url(#relay-tip)"/>
+  <text x="701" y="321" class="relay-label">JWE over HTTPS</text>
+  <rect x="47" y="349" width="376" height="74" rx="9" fill="#fff" stroke="#76aea5"/>
+  <text x="66" y="380" class="name">Vault endpoint</text>
+  <text x="66" y="405" class="detail">Accepts the card and issues a token</text>
+
+  <rect x="497" y="349" width="376" height="74" rx="9" fill="#fff" stroke="#ae94c7"/>
+  <text x="516" y="380" class="name">Reference relay</text>
+  <text x="846" y="378" text-anchor="end" class="relay-label">Experimental</text>
+  <text x="516" y="405" class="detail">Verifies the request and decrypts the card</text>
+  <path d="M685 423V468" class="wire" stroke="#765395" marker-end="url(#relay-tip)"/>
+  <text x="701" y="452" class="relay-label">Card fields over TLS</text>
+  <rect x="497" y="473" width="376" height="64" rx="9" fill="#fff" stroke="#ae94c7"/>
+  <text x="516" y="512" class="name">Payment processor</text>
+
+  <!-- Both routes return to the merchant app. -->
+  <path d="M235 423V561Q235 570 244 570H382Q392 570 392 580V595" class="wire" stroke="#167267" marker-end="url(#direct-tip)"/>
+  <text x="251" y="495" class="direct-label">Vault token</text>
+  <path d="M685 537V560Q685 570 675 570H538Q528 570 528 580V595" class="wire" stroke="#765395" marker-end="url(#relay-tip)"/>
+  <text x="505" y="560" class="relay-label">Token via relay</text>
+  <rect x="173" y="600" width="574" height="61" rx="10" fill="#18343f"/>
+  <text x="196" y="638" font-size="22" font-weight="650" fill="#fff">CardToken</text>
+  <path d="M327 618V644" stroke="#5a737c"/>
+  <text x="345" y="637" font-size="17" fill="#e3eff1">Token and display metadata returned to the app</text>
+</svg>

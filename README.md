@@ -1,24 +1,31 @@
 # CDCScanner for iOS
 
-Scan a payment card with the iPhone camera, or add native card entry to a SwiftUI or UIKit checkout. Send the form to a compatible HTTPS tokenization endpoint and use the returned token in your app.
+Read a payment card with the iPhone camera, collect card details in native SwiftUI or UIKit fields, and exchange them for a token from your vault. Camera scanning and card entry are separate Swift package products, so you can adopt either one independently.
 
-[![CI](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml/badge.svg)](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml) · [Swift Package Index](https://swiftpackageindex.com/Madhurr/CDCScanner-iOS-) · [MIT license](LICENSE)
+[![CI](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml) · [Beta release](https://github.com/Madhurr/CDCScanner-iOS-/releases/tag/1.0.0-beta.1) · [Swift Package Index](https://swiftpackageindex.com/Madhurr/CDCScanner-iOS-) · [MIT license](LICENSE)
+
+[![Three iPhone simulator screenshots show a masked Visa entered in the form, an inline error for an incorrect test security code, and a receipt with tok_demo_visa and the last four digits.](docs/media/checkout-states.png)](docs/media/checkout-states.png)
+
+[Watch the checkout video](https://github.com/Madhurr/CDCScanner-iOS-/releases/download/1.0.0-beta.1/checkout.mp4) · [Open the example source](Examples/CardCheckout/App) · [See the architecture](#architecture)
 
 ## Try the checkout
 
-<a href="docs/media/checkout.mp4"><img src="docs/media/checkout.gif" width="264" alt="iPhone demo filling a sample Visa, entering a masked security code and receiving tok_demo_visa"></a>
+1. Clone the repository and open [CardCheckout.xcodeproj](Examples/CardCheckout/CardCheckout.xcodeproj) in Xcode.
+2. Select the **CardCheckout** scheme, choose an iPhone simulator, and press **Run**. The example uses the local package and needs no API credentials.
+3. Tap **Use test card**, enter **123** in **Security code**, and tap **Create test token**. The receipt displays `tok_demo_visa` and **Visa ending in 1111**. To exercise the retry flow, enter a different three-digit code first.
 
-[Watch the MP4](docs/media/checkout.mp4) · [Browse the example app](Examples/CardCheckout/App)
+The demo uses the SDK’s fields, validation, JSON request builder, and token parser. An in-process test vault answers the request on the device. Use synthetic card data. The fixture token has no payment value. [Test vault implementation](Examples/CardCheckout/App/TestVault.swift)
 
-1. Clone this repository and open `Examples/CardCheckout/CardCheckout.xcodeproj` in Xcode.
-2. Select the **CardCheckout** scheme, choose an iPhone simulator and press **Run**. The project uses the local package.
-3. Tap **Use test card**, enter **123** in **Security code**, then tap **Create test token**. The receipt shows `tok_demo_visa` and the last four digits. Entering a different three-digit code lets you try the rejection and retry flow.
+<details>
+<summary>Play the simulator walkthrough inline</summary>
 
-The demo uses the SDK’s real fields, validation, JSON request builder and token parser. Its example-only URL protocol answers requests on the device. Use synthetic data. The fixture token has no payment value. On a supported physical iPhone, **Scan a test card** also fills the number and expiry.
+<img src="docs/media/checkout.gif" width="276" alt="Animated checkout from sample card entry through the test token receipt">
+
+</details>
 
 ## Install the beta
 
-In Xcode, choose **File → Add Package Dependencies**, enter `https://github.com/Madhurr/CDCScanner-iOS-.git`, and select **Exact Version** `1.0.0-beta.1`. For a Swift package manifest use:
+In Xcode, choose **File → Add Package Dependencies**, enter `https://github.com/Madhurr/CDCScanner-iOS-.git`, and select **Exact Version** `1.0.0-beta.1`. In a Swift package manifest, pin the same release.
 
 ```swift
 .package(url: "https://github.com/Madhurr/CDCScanner-iOS-.git", exact: "1.0.0-beta.1")
@@ -30,7 +37,38 @@ In Xcode, choose **File → Add Package Dependencies**, enter `https://github.co
 | `CDCScanner` | A VisionKit camera scanner returning the number, brand and optional expiry. [Scanner guide](docs/SCANNER.md) |
 | `CDCCore` | Card rules, Luhn checks and date parsing without UI. |
 
-The UI targets require iOS 16+. The manifest requires Swift tools 5.9+. Camera scanning requires a supported physical device and an `NSCameraUsageDescription` entry. Check `CardScanner.isSupported` before offering it. The example requires Xcode with an installed iOS simulator runtime.
+The UI targets require iOS 16 or later. The package manifest uses Swift tools 5.9.
+
+## Architecture
+
+Both typed and scanned cards can feed the same `SecureCardForm`. Calling `form.tokenize(using:)` hands the card to the tokenizer you choose. The two paths below show where the card details travel and how the token returns to the app.
+
+[![Architecture diagram showing the iPhone form sending card fields directly to a vault over HTTPS, or sending JWE to an experimental relay that decrypts the card and contacts a processor. Both paths return a CardToken to the app.](docs/media/tokenization-architecture.svg)](docs/media/tokenization-architecture.svg)
+
+- **Direct to vault.** `HTTPTokenizer` maps the card fields to your provider’s JSON format and reads the token from a configurable response path. The checkout demo exercises this path with its local test vault. [Secure fields guide](docs/SECURE_FIELDS.md)
+- **Experimental encrypted relay.** With the attested key provider, the client verifies the relay’s key and image measurement before encrypting. The Go relay decrypts the payload and forwards card details to the processor. [Protocol and threat model](docs/ZERO_TRUST.md) · [Reference relay](relay/README.md)
+
+## Scan a card on iPhone
+
+On a supported physical iPhone, the example offers **Scan a test card**. VisionKit recognizes text on-device. The scanner checks candidate numbers against its brand rules and Luhn checksum and requires matching observations across frames. It returns the number, brand, and expiry when available. The user enters the security code separately.
+
+Add `NSCameraUsageDescription` to your app’s Info.plist. In a SwiftUI checkout with an attached `SecureCardForm` and an `@State` Boolean named `scanning`, use the scanner modifier on the button.
+
+```swift
+Button("Scan a test card") { scanning = true }
+    .disabled(!CardScanner.isSupported)
+    .cardScanner(isPresented: $scanning) { card in
+        form.clear()
+        form.numberField?.setNumber(card.number)
+        if let expiry = card.expiry {
+            form.expiryField?.setExpiry(expiry)
+        }
+    }
+```
+
+Import `CDCScanner` for the scanner modifier and `CDCSecureFields` for the form. UIKit also supports `CardScanner.scan(from:)` with `async/await`. [Device requirements, supported brands, and configuration](docs/SCANNER.md)
+
+<!-- Add the physical-device scanning recording here when available. -->
 
 ## Connect your vault
 
