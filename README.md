@@ -1,12 +1,12 @@
 # CDCScanner for iOS
 
-Read a payment card with the iPhone camera, collect card details in native SwiftUI or UIKit fields, and exchange them for a token from your vault. Camera scanning and card entry are separate Swift package products, so you can adopt either one independently.
+Scan credit and debit cards **fully offline** with the iPhone camera. On-device recognition extracts the card number and optional expiry, with built-in rules for **15 card networks**. Use the scanner on its own, or fill a native SwiftUI or UIKit checkout and send the completed form to your vault for tokenization.
 
 [![CI](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml) · [Beta release](https://github.com/Madhurr/CDCScanner-iOS-/releases/tag/1.0.0-beta.1) · [Swift Package Index](https://swiftpackageindex.com/Madhurr/CDCScanner-iOS-) · [MIT license](LICENSE)
 
 [![Three iPhone simulator screenshots show a masked Visa entered in the form, an inline error for an incorrect test security code, and a receipt with tok_demo_visa and the last four digits.](docs/media/checkout-states.png)](docs/media/checkout-states.png)
 
-[Watch the checkout video](https://github.com/Madhurr/CDCScanner-iOS-/releases/download/1.0.0-beta.1/checkout.mp4) · [Open the example source](Examples/CardCheckout/App) · [See the architecture](#architecture)
+[Watch the checkout video](https://github.com/Madhurr/CDCScanner-iOS-/releases/download/1.0.0-beta.1/checkout.mp4) · [Open the example source](Examples/CardCheckout/App) · [See the architecture](#architecture) · [Supported card networks](#supported-card-networks)
 
 ## Try the checkout
 
@@ -50,7 +50,7 @@ Both typed and scanned cards can feed the same `SecureCardForm`. Calling `form.t
 
 ## Scan a card on iPhone
 
-On a supported physical iPhone, the example offers **Scan a test card**. VisionKit recognizes text on-device. The scanner checks candidate numbers against its brand rules and Luhn checksum and requires matching observations across frames. It returns the number, brand, and expiry when available. The user enters the security code separately.
+On a supported physical iPhone, the example offers **Scan a test card**. VisionKit reads the camera frames on-device. The scanner checks candidate numbers against its bundled brand rules and the Luhn checksum, then confirms the number across frames. It returns the number, brand, and expiry when available. Scanning needs no internet connection or API key. Tokenizing with a remote vault requires a connection. The user enters the security code separately.
 
 Add `NSCameraUsageDescription` to your app’s Info.plist. In a SwiftUI checkout with an attached `SecureCardForm` and an `@State` Boolean named `scanning`, use the scanner modifier on the button.
 
@@ -69,6 +69,22 @@ Button("Scan a test card") { scanning = true }
 Import `CDCScanner` for the scanner modifier and `CDCSecureFields` for the form. UIKit also supports `CardScanner.scan(from:)` with `async/await`. [Device requirements, supported brands, and configuration](docs/SCANNER.md)
 
 <!-- Add the physical-device scanning recording here when available. -->
+
+## Supported card networks
+
+The scanner identifies the network from the card number’s issuer prefix and length. When prefixes overlap, the most specific match wins.
+
+| Card-number length | Networks recognized by the default rules |
+| --- | --- |
+| 12–19 digits | Maestro |
+| 13, 16, or 19 digits | Visa |
+| 14–19 digits | Diners Club |
+| 15 digits | American Express, UATP |
+| 16 digits | Dankort, Mastercard, Mir, NPS Pridnestrovie, RuPay |
+| 16–19 digits | Discover, InterPayment, JCB, UnionPay |
+| 19 digits | China T-Union |
+
+Set `ScannerConfiguration.brandRules` to limit scanning to the networks your checkout accepts, or add a `CardBrandRule` for a custom issuer range. [Built-in issuer prefixes and lengths](docs/SCANNER.md#supported-brands)
 
 ## Connect your vault
 
