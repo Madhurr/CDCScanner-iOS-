@@ -23,6 +23,7 @@ public struct ScannedCard: Hashable, Sendable, Codable {
 
     /// The number with every digit but the last four replaced by a bullet, grouped like ``formattedNumber``.
     public var maskedNumber: String {
+        guard number.count > 4 else { return String(repeating: "•", count: number.count) }
         let keep = number.count - 4
         let masked = String(repeating: "•", count: max(keep, 0)) + number.suffix(4)
         return ScannedCard.group(masked, pattern: groupingPattern)
@@ -57,4 +58,10 @@ public struct ScannedCard: Hashable, Sendable, Codable {
         }
         return groups.joined(separator: " ")
     }
+}
+
+extension ScannedCard: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String { "ScannedCard(\(maskedNumber))" }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: ["maskedNumber": maskedNumber]) }
 }

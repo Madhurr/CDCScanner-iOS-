@@ -3,8 +3,7 @@ import Foundation
 
 /// Everything a host app is allowed to know about the number in a ``SecureCardNumberField``.
 ///
-/// The state is derived from the digits but never contains them. It is safe to log, bind to UI
-/// and send to analytics.
+/// Use the derived metadata for validation and display. Keep payment fields out of analytics.
 public struct CardNumberState: Hashable, Sendable {
     /// Number of digits typed.
     public let length: Int

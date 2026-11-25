@@ -6,9 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-## [1.0.0] – 2026-11-20
+## [1.0.0-beta.1] – 2026-11-26
 
-First tagged release. This is a rewrite; nothing from the untagged `main` history is API-compatible.
+First public beta of the rewritten API. Earlier scanner integrations need migration.
+
+- Updated the relay to go-jose 4.1.4 for GO-2026-4945.
+- Added a runnable test-card checkout, UI test and simulator walkthrough.
+- Built-in tokenizers discard raw response bodies, reject empty or echoed-PAN tokens and restrict default HTTPS redirects to the original origin.
+- Apple builds evaluate the enclave certificate path against the pinned anchor. Production verification requires a PCR0 image pin.
+- The reference relay consumes enrollment challenges once and advances in-memory assertion counters atomically. Clients using their own enrollment service must return a fresh 32-byte challenge.
+- Unknown relay modes fail startup. Nitro mode requires production App Attest. The default listen address is loopback.
+- Documented data access in the host process and the remaining PCI and hardware assessment work.
 
 ### Added
 - Zero-trust tokenisation: `EncryptingTokenizer` encrypts card data inside the field with JOSE JWE

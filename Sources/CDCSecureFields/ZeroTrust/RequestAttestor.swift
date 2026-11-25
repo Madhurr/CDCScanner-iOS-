@@ -31,10 +31,11 @@ import Security
 /// relay can verify that the body was produced by a genuine, un-tampered build of your app on a
 /// real device. Not available on the simulator; check ``isSupported``.
 ///
-/// For the strongest binding supply a `challengeProvider` that fetches a one-time challenge from
-/// the relay; it is hashed into the attestation and sent back in a header so the relay can tie the
-/// key to a session it issued.
+/// Enrollment fetches a one-time challenge from the sibling `challenge` endpoint. Supply a
+/// `challengeProvider` for a custom route or authenticated session. Return 32 decoded bytes.
 public struct AppAttestRequestAttestor: RequestAttestor {
+    public enum AttestorError: Error { case unsupportedDevice, missingKey, invalidChallenge }
+
     public var challengeProvider: (@Sendable () async throws -> Data)?
     private let keychainService: String
 
@@ -49,24 +50,40 @@ public struct AppAttestRequestAttestor: RequestAttestor {
 
     public func attest(_ request: inout URLRequest, bodyHash: Data) async throws {
         let service = DCAppAttestService.shared
-        guard service.isSupported else { return }
+        guard service.isSupported else { throw AttestorError.unsupportedDevice }
 
         var keyID = loadKeyID()
         if keyID == nil {
             let newKeyID = try await service.generateKey()
-            var clientData = bodyHash
+            let challenge: Data
             if let challengeProvider {
-                let challenge = try await challengeProvider()
-                clientData = Data(SHA256.hash(data: challenge))
-                request.setValue(challenge.base64EncodedString(), forHTTPHeaderField: AttestationHeaders.challenge)
+                challenge = try await challengeProvider()
+            } else {
+                guard let endpoint = request.url, endpoint.scheme?.lowercased() == "https" else {
+                    throw TokenizationError.insecureEndpoint
+                }
+                let url = endpoint.deletingLastPathComponent().appendingPathComponent("challenge")
+                var enrollment = URLRequest(url: url)
+                enrollment.httpMethod = "POST"
+                let session = HTTPTokenizer.makeSession()
+                defer { session.finishTasksAndInvalidate() }
+                let (data, response) = try await session.data(for: enrollment)
+                struct Response: Decodable { let challenge: Data }
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                    throw AttestorError.invalidChallenge
+                }
+                challenge = try JSONDecoder().decode(Response.self, from: data).challenge
             }
+            guard challenge.count == 32 else { throw AttestorError.invalidChallenge }
+            let clientData = Data(SHA256.hash(data: challenge))
+            request.setValue(challenge.base64EncodedString(), forHTTPHeaderField: AttestationHeaders.challenge)
             let attestation = try await service.attestKey(newKeyID, clientDataHash: clientData)
             request.setValue(attestation.base64EncodedString(), forHTTPHeaderField: AttestationHeaders.attestation)
             storeKeyID(newKeyID)
             keyID = newKeyID
         }
 
-        guard let keyID else { return }
+        guard let keyID else { throw AttestorError.missingKey }
         let assertion = try await service.generateAssertion(keyID, clientDataHash: bodyHash)
         request.setValue(keyID, forHTTPHeaderField: AttestationHeaders.keyID)
         request.setValue(assertion.base64EncodedString(), forHTTPHeaderField: AttestationHeaders.assertion)

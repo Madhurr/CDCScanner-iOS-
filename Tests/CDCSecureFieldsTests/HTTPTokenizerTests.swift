@@ -74,7 +74,25 @@ final class HTTPTokenizerTests: XCTestCase {
         XCTAssertEqual(token.bin, "411111")
         XCTAssertEqual(token.lastFour, "1111")
         XCTAssertEqual(token.expiry, CardExpiry(month: 9, year: 2027))
-        XCTAssertEqual(token.providerResponse, response)
+        XCTAssertNil(token.providerResponse)
+    }
+
+    func testRejectsEmptyBooleanAndEchoedCardTokens() {
+        let tokenizer = HTTPTokenizer(url: URL(string: "https://vault.example.com")!)
+        for value in ["", " ", "4111 1111 1111 1111", true] as [Any] {
+            let data = try! JSONSerialization.data(withJSONObject: ["token": value])
+            XCTAssertThrowsError(try tokenizer.token(from: data, for: card))
+        }
+    }
+
+    func testDefaultRedirectsStayWithinHTTPSOrigin() {
+        let origin = URL(string: "https://vault.example.com/tokens")
+        for url in ["https://vault.example.com:443/next", "https://VAULT.example.com/next"] {
+            XCTAssertTrue(SameOriginRedirectPolicy.allows(from: origin, to: URL(string: url)))
+        }
+        for url in ["http://vault.example.com", "https://vault.example.com:8443", "https://other.example.com"] {
+            XCTAssertFalse(SameOriginRedirectPolicy.allows(from: origin, to: URL(string: url)))
+        }
     }
 
     func testNumericTokenAndMissingToken() throws {

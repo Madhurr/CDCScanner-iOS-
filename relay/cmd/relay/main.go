@@ -7,7 +7,7 @@
 //
 // Configuration is by environment variable:
 //
-//	RELAY_ADDR          listen address (default :8080)
+//	RELAY_ADDR          listen address (default 127.0.0.1:8080)
 //	RELAY_MODE          dev | nitro (default dev)
 //	RELAY_VERSION       reported in user_data (default dev)
 //	RELAY_PSP           echo | stripe (default echo)
@@ -73,7 +73,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	addr := env("RELAY_ADDR", ":8080")
+	addr := env("RELAY_ADDR", "127.0.0.1:8080")
 	log.Printf("cdc-relay %s listening on %s mode=%s psp=%s app_attest=%s", s.version, addr, env("RELAY_MODE", "dev"), s.psp.Name(), env("APP_ATTEST", "off"))
 	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second}
 	log.Fatal(srv.ListenAndServe())
@@ -87,9 +87,14 @@ func newServer(env func(k, d string) string) (*server, error) {
 	s := &server{key: key, nonces: store.NewNonceCache(nonceTTL), challenges: store.NewNonceCache(challengeTTL), version: env("RELAY_VERSION", "dev"), now: time.Now}
 	switch env("RELAY_MODE", "dev") {
 	case "nitro":
+		if env("APP_ATTEST", "off") != "required" || env("APP_ATTEST_ENV", "production") != "production" {
+			return nil, errors.New("nitro requires production App Attest")
+		}
 		s.attester, err = attest.NewNitro()
-	default:
+	case "dev":
 		s.attester, err = attest.NewDev("cdc-relay-dev", s.version)
+	default:
+		return nil, errors.New("unknown RELAY_MODE")
 	}
 	if err != nil {
 		return nil, err
@@ -100,17 +105,27 @@ func newServer(env func(k, d string) string) (*server, error) {
 			return nil, errors.New("STRIPE_SECRET_KEY is required for RELAY_PSP=stripe")
 		}
 		s.psp = psp.Stripe{SecretKey: env("STRIPE_SECRET_KEY", "")}
-	default:
+	case "echo":
 		secret := make([]byte, 32)
 		_, _ = rand.Read(secret)
 		s.psp = psp.Echo{Secret: secret}
+	default:
+		return nil, errors.New("unknown RELAY_PSP")
 	}
-	if env("APP_ATTEST", "off") == "required" {
+	switch env("APP_ATTEST", "off") {
+	case "off":
+	case "required":
+		environment := env("APP_ATTEST_ENV", "production")
+		if environment != "production" && environment != "development" {
+			return nil, errors.New("unknown APP_ATTEST_ENV")
+		}
 		appID := env("APP_ATTEST_APP_ID", "")
 		if appID == "" {
 			return nil, errors.New("APP_ATTEST_APP_ID is required when APP_ATTEST=required")
 		}
-		s.appAttest = appattest.New(appID, env("APP_ATTEST_ENV", "production") == "production", appattest.NewMemoryKeyStore())
+		s.appAttest = appattest.New(appID, environment == "production", appattest.NewMemoryKeyStore())
+	default:
+		return nil, errors.New("unknown APP_ATTEST")
 	}
 	return s, nil
 }
@@ -182,7 +197,7 @@ func (s *server) handleChallenge(w http.ResponseWriter, _ *http.Request) {
 	c := make([]byte, 32)
 	_, _ = rand.Read(c)
 	encoded := base64.StdEncoding.EncodeToString(c)
-	s.challenges.Check("issued:"+encoded, s.now()) // record issuance
+	s.challenges.Check(encoded, s.now()) // record issuance
 	writeJSON(w, http.StatusOK, map[string]string{"challenge": encoded})
 }
 
@@ -238,7 +253,7 @@ func (s *server) handleTokenize(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	token, err := s.psp.Tokenize(ctx, p)
 	if err != nil {
-		log.Printf("psp %s failed: %v", s.psp.Name(), err)
+		log.Printf("tokenisation failed at provider %s", s.psp.Name())
 		httpError(w, http.StatusBadGateway, "provider rejected the card")
 		return
 	}
@@ -255,19 +270,13 @@ func (s *server) verifyAppAttest(r *http.Request, bodyHash []byte) error {
 		return errors.New("missing headers")
 	}
 	if attestation := r.Header.Get(headerAttest); attestation != "" {
-		clientData := bodyHash
-		if challenge := r.Header.Get(headerChalleng); challenge != "" {
-			// A challenge may be used once, and only if this relay issued it.
-			if s.challenges.Check("issued:"+challenge, s.now()) {
-				return errors.New("unknown challenge")
-			}
-			if !s.challenges.Check("used:"+challenge, s.now()) {
-				return errors.New("challenge reused")
-			}
-			sum := sha256.Sum256([]byte(challenge))
-			clientData = sum[:]
+		challenge := r.Header.Get(headerChalleng)
+		raw, err := base64.StdEncoding.DecodeString(challenge)
+		if err != nil || len(raw) != 32 || !s.challenges.Consume(challenge, s.now()) {
+			return errors.New("invalid or expired enrollment challenge")
 		}
-		if err := s.appAttest.VerifyAttestation(attestation, keyID, clientData); err != nil {
+		digest := sha256.Sum256(raw)
+		if err := s.appAttest.VerifyAttestation(attestation, keyID, digest[:]); err != nil {
 			return err
 		}
 	}

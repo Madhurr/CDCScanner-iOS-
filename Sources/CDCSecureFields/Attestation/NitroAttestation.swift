@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Security)
+import Security
+#endif
 
 /// Why an attestation document was rejected.
 public enum AttestationError: Error, Equatable, Sendable {
@@ -154,6 +157,26 @@ public struct NitroAttestationVerifier: Sendable {
             throw AttestationError.untrustedRoot
         }
 
+        #if canImport(Security)
+        let chain = try ([parsed.certificate] + parsed.cabundle.reversed()).map { der in
+            guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+                throw AttestationError.malformed("X.509 certificate")
+            }
+            return certificate
+        }
+        guard let anchor = chain.last else { throw AttestationError.untrustedRoot }
+        var trust: SecTrust?
+        guard SecTrustCreateWithCertificates(chain as CFArray, SecPolicyCreateBasicX509(), &trust) == errSecSuccess,
+              let trust,
+              SecTrustSetAnchorCertificates(trust, [anchor] as CFArray) == errSecSuccess,
+              SecTrustSetAnchorCertificatesOnly(trust, true) == errSecSuccess,
+              SecTrustSetVerifyDate(trust, now as CFDate) == errSecSuccess,
+              SecTrustSetNetworkFetchAllowed(trust, false) == errSecSuccess,
+              SecTrustEvaluateWithError(trust, nil) else {
+            throw AttestationError.brokenChain(index: 0)
+        }
+        #endif
+
         guard path[0].curve == .p384 else { throw AttestationError.unsupportedAlgorithm }
         let leafKey: P384.Signing.PublicKey
         do { leafKey = try P384.Signing.PublicKey(x963Representation: path[0].publicKeyPoint) } catch { throw AttestationError.malformed("leaf key") }
@@ -166,6 +189,9 @@ public struct NitroAttestationVerifier: Sendable {
 
         if let pcr0 = parsed.pcrs[0], pcr0.allSatisfy({ $0 == 0 }), !policy.allowsDebugMode {
             throw AttestationError.debugMode
+        }
+        if !policy.allowsDebugMode && policy.expectedPCRs[0]?.isEmpty != false {
+            throw AttestationError.pcrMismatch(index: 0)
         }
         for (index, accepted) in policy.expectedPCRs {
             guard let actual = parsed.pcrs[index], accepted.contains(actual) else {

@@ -9,6 +9,17 @@ final class ScannedCardTests: XCTestCase {
         XCTAssertEqual(card.lastFour, "1111")
     }
 
+    func testScanDiagnosticsRedactTheNumber() {
+        let card = ScannedCard(number: "4111111111111111", brand: .visa, expiry: nil)
+        var output = ""
+        dump(card, to: &output)
+        for text in [output, String(describing: card), String(reflecting: card)] {
+            XCTAssertFalse(text.contains(card.number))
+            XCTAssertTrue(text.contains("1111"))
+        }
+        XCTAssertEqual(ScannedCard(number: "12", brand: .visa, expiry: nil).maskedNumber, "••")
+    }
+
     func testAmexFormatting() {
         let card = ScannedCard(number: "378282246310005", brand: .americanExpress, expiry: nil)
         XCTAssertEqual(card.formattedNumber, "3782 822463 10005")

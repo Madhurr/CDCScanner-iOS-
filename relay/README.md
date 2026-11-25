@@ -20,18 +20,19 @@ curl -s localhost:8080/v1/attestation/pcrs       # pin PCR0 in NitroAttestationP
 
 In `dev` mode the document is signed by an in-process P-384 chain with the same shape as a Nitro
 document, so the whole iOS flow, including attestation verification and PCR pinning, runs against a
-laptop. The iOS SDK pins the dev root by its SHA-256:
+laptop. Compute the dev root fingerprint from the DER certificate on your test machine:
 
-```swift
-let devRoot = try X509Certificate(pem: devRootPEM).sha256Fingerprint   // or compute with openssl
-let policy = NitroAttestationPolicy(trustedRootSHA256: devRoot, expectedPCRs: [0: [devPCR0]])
+```sh
+curl -fsS http://127.0.0.1:8080/v1/attestation/dev-root | openssl x509 -outform DER | openssl dgst -sha256
 ```
+
+Pass the 32 fingerprint bytes to `trustedRootSHA256` and the 48 PCR0 bytes to `expectedPCRs[0]`. The iOS client requires HTTPS, so a dev client also needs a trusted local TLS endpoint in front of the relay.
 
 ## Configuration
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `RELAY_ADDR` | `:8080` | Listen address |
+| `RELAY_ADDR` | `127.0.0.1:8080` | Listen address |
 | `RELAY_MODE` | `dev` | `dev` or `nitro` |
 | `RELAY_VERSION` | `dev` | Reported in `user_data` and used for dev PCRs |
 | `RELAY_PSP` | `echo` | `echo` (HMAC dev tokens) or `stripe` |
@@ -39,6 +40,8 @@ let policy = NitroAttestationPolicy(trustedRootSHA256: devRoot, expectedPCRs: [0
 | `APP_ATTEST` | `off` | `required` to demand App Attest headers on `/v1/tokenize` |
 | `APP_ATTEST_APP_ID` | | `TEAMID.bundle.identifier` |
 | `APP_ATTEST_ENV` | `production` | `development` accepts the `appattestdevelop` environment |
+
+Nitro mode requires `APP_ATTEST=required` and `APP_ATTEST_ENV=production`. Enrollment uses a fresh 32-byte challenge from this relay. A single process owns challenge, key and counter state.
 
 ## Endpoints
 

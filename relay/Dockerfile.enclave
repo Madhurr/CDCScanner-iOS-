@@ -1,5 +1,5 @@
 # Reproducible enclave image for cdc-relay. Build with nitro-cli build-enclave.
-FROM golang:1.24-alpine AS build
+FROM golang:1.27.4-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

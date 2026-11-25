@@ -1,4 +1,5 @@
 import CDCCore
+import CoreFoundation
 import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
@@ -21,8 +22,8 @@ import FoundationNetworking
 /// let token = try await form.tokenize(using: tokenizer)
 /// ```
 ///
-/// Requests use an ephemeral session with caching disabled, never follow a redirect to a different
-/// host, and refuse non-HTTPS URLs. Supply your own `URLSession` to add certificate pinning.
+/// The default ephemeral session follows redirects only within the original HTTPS origin.
+/// A supplied session owns its redirect, trust, cookie and cache policies.
 public struct HTTPTokenizer: CardTokenizer {
     /// JSON key paths for each value. Dots nest objects, e.g. `card.number`. `nil` omits the value.
     public struct FieldMapping: Sendable, Hashable {
@@ -95,7 +96,7 @@ public struct HTTPTokenizer: CardTokenizer {
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw TokenizationError.malformedResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw TokenizationError.httpStatus(http.statusCode, body: data)
+            throw TokenizationError.httpStatus(http.statusCode, body: nil)
         }
         return try token(from: data, for: card)
     }
@@ -157,16 +158,18 @@ public struct HTTPTokenizer: CardTokenizer {
         let tokenString: String
         switch value {
         case let string as String: tokenString = string
-        case let number as NSNumber: tokenString = number.stringValue
+        case let number as NSNumber where CFGetTypeID(number) != CFBooleanGetTypeID(): tokenString = number.stringValue
         default: throw TokenizationError.malformedResponse
         }
+        guard !tokenString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !card.withNumber({ !$0.isEmpty && tokenString.filter(\.isNumber).contains($0) })
+        else { throw TokenizationError.malformedResponse }
         return CardToken(
             value: tokenString,
             brand: card.brand,
             bin: card.bin,
             lastFour: card.lastFour,
-            expiry: card.expiry,
-            providerResponse: data
+            expiry: card.expiry
         )
     }
 
@@ -180,7 +183,7 @@ public struct HTTPTokenizer: CardTokenizer {
         configuration.waitsForConnectivity = false
         configuration.tlsMinimumSupportedProtocolVersion = .TLSv12
         #endif
-        return URLSession(configuration: configuration, delegate: SameHostRedirectPolicy(), delegateQueue: nil)
+        return URLSession(configuration: configuration, delegate: SameOriginRedirectPolicy(), delegateQueue: nil)
     }
 
     static func set(_ value: Any, at path: String, in object: inout [String: Any]) {
@@ -206,7 +209,17 @@ public struct HTTPTokenizer: CardTokenizer {
 }
 
 /// Refuses redirects that would send card data to another host.
-private final class SameHostRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
+final class SameOriginRedirectPolicy: NSObject, URLSessionTaskDelegate, Sendable {
+    static func allows(from source: URL?, to destination: URL?) -> Bool {
+        guard let source, let destination,
+              let host = source.host?.lowercased(), !host.isEmpty else { return false }
+        return source.scheme?.lowercased() == "https"
+            && destination.scheme?.lowercased() == "https"
+            && destination.host?.lowercased() == host
+            && (source.port ?? 443) == (destination.port ?? 443)
+            && destination.user == nil && destination.password == nil
+    }
+
     func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
@@ -214,8 +227,6 @@ private final class SameHostRedirectPolicy: NSObject, URLSessionTaskDelegate, Se
         newRequest request: URLRequest,
         completionHandler: @escaping (URLRequest?) -> Void
     ) {
-        let original = task.originalRequest?.url
-        let sameHost = request.url?.host == original?.host && request.url?.scheme?.lowercased() == "https"
-        completionHandler(sameHost ? request : nil)
+        completionHandler(Self.allows(from: task.originalRequest?.url, to: request.url) ? request : nil)
     }
 }

@@ -160,3 +160,23 @@ func TestAppAttestRequiredRejectsMissingHeaders(t *testing.T) {
 		t.Fatalf("expected 401, got %s", r.Status)
 	}
 }
+
+func TestRejectsInvalidSettings(t *testing.T) {
+	for _, settings := range []map[string]string{
+		{"RELAY_MODE": "mistyped"},
+		{"RELAY_PSP": "mistyped"},
+		{"APP_ATTEST": "mistyped"},
+		{"APP_ATTEST": "required", "APP_ATTEST_APP_ID": "TEST.app", "APP_ATTEST_ENV": "mistyped"},
+		{"RELAY_MODE": "nitro", "APP_ATTEST": "off"},
+	} {
+		_, err := newServer(func(k, fallback string) string {
+			if value, ok := settings[k]; ok {
+				return value
+			}
+			return fallback
+		})
+		if err == nil {
+			t.Fatal("invalid settings accepted", settings)
+		}
+	}
+}

@@ -72,7 +72,7 @@ public struct EncryptingTokenizer: CardTokenizer {
 
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw TokenizationError.malformedResponse }
-        guard (200..<300).contains(http.statusCode) else { throw TokenizationError.httpStatus(http.statusCode, body: data) }
+        guard (200..<300).contains(http.statusCode) else { throw TokenizationError.httpStatus(http.statusCode, body: nil) }
         return try HTTPTokenizer.token(from: data, for: card, tokenPath: tokenPath)
     }
 

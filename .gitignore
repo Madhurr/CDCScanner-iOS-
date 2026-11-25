@@ -16,3 +16,5 @@ Package.resolved
 
 # macOS
 .DS_Store
+
+!Examples/CardCheckout/CardCheckout.xcodeproj/

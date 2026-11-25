@@ -10,7 +10,7 @@ public struct CardToken: Hashable, Sendable, Codable {
     public let bin: String
     public let lastFour: String
     public let expiry: CardExpiry?
-    /// The provider's raw response, for fields the host app needs that are not modelled here.
+    /// Optional provider data from a custom tokenizer. SDK tokenizers leave this nil.
     public let providerResponse: Data?
 
     public init(value: String, brand: CardBrand?, bin: String, lastFour: String, expiry: CardExpiry?, providerResponse: Data? = nil) {
@@ -25,9 +25,7 @@ public struct CardToken: Hashable, Sendable, Codable {
 
 /// Exchanges collected card data for a token.
 ///
-/// This is the boundary that keeps your servers out of PCI scope: implement it, or use
-/// ``HTTPTokenizer``, so the PAN goes from the field straight to a PCI DSS certified vault or
-/// payment provider and only the returned token reaches your backend.
+/// Direct a supported integration to the vault approved for your deployment.
 public protocol CardTokenizer: Sendable {
     func tokenize(_ card: SecureCardData) async throws -> CardToken
 }

@@ -64,6 +64,9 @@ func (s Stripe) Tokenize(ctx context.Context, p card.Payload) (string, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
 	}
+	// A provider redirect must never forward the card or the API credential.
+	scopedClient := *client
+	scopedClient.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	form := url.Values{}
 	form.Set("card[number]", p.Number)
 	form.Set("card[exp_month]", p.ExpMonth)
@@ -80,23 +83,19 @@ func (s Stripe) Tokenize(ctx context.Context, p card.Payload) (string, error) {
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Bearer "+s.SecretKey)
-	res, err := client.Do(req)
+	res, err := scopedClient.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(res.Body, 1<<16))
 	var out struct {
-		ID    string `json:"id"`
-		Error struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		} `json:"error"`
+		ID string `json:"id"`
 	}
 	_ = json.Unmarshal(body, &out)
 	if res.StatusCode/100 != 2 || out.ID == "" {
-		// Provider messages can echo card details; return only the code.
-		return "", fmt.Errorf("stripe: HTTP %d %s", res.StatusCode, out.Error.Code)
+		// The response can contain card details. Preserve only the HTTP status.
+		return "", fmt.Errorf("stripe: HTTP %d", res.StatusCode)
 	}
 	return out.ID, nil
 }

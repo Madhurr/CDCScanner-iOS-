@@ -4,16 +4,13 @@ Everything about the hardened entry fields, the form, `SecureCardData` and the p
 tokenizer. For the attested, field-encrypted mode see [ZERO_TRUST.md](ZERO_TRUST.md); for the
 security model see the README.
 
-`CDCSecureFields` is an open alternative to hosted-field SDKs such as VGS Collect. The fields
-collect the card number, expiry, security code and name, and hand the data straight to a
-tokeniser. Your view controllers, view models and servers only ever see a token, the brand, the
-BIN and the last four digits.
+The fields collect the card number, expiry, security code and name in the host app’s process. The ordinary checkout API returns a token. Custom tokenizer code is trusted with plaintext card data.
 
 ## What the fields do that a `UITextField` does not
 
 | Protection | Detail |
 |---|---|
-| No `text` on the public API | The number is unreachable from host code. Observe `numberState` (brand, validity, BIN, last four) instead. |
+| No `text` on the public API | The field exposes validation and masked metadata. Observe `numberState` (brand, validity, BIN, last four) instead. |
 | Copy, cut, share and look-up blocked | The edit menu offers paste only. `pastePolicy = .disabled` removes that too. |
 | Keyboard cannot learn the value | Autocorrection, predictive text, spell checking and smart punctuation are off. |
 | Hidden from the app switcher | Contents are covered while the app is inactive, so the snapshot shows bullets. |
@@ -90,21 +87,13 @@ let tokenizer = HTTPTokenizer(
 )
 ```
 
-Pass your own `URLSession` to add certificate pinning. For a provider SDK that does not speak
+A custom `URLSession` takes responsibility for redirects, credentials, certificate trust and caching. Refuse redirects outside the original HTTPS origin. For a provider SDK that does not speak
 JSON, implement `CardTokenizer` yourself; `form.makeCardData()` gives you a `SecureCardData` whose
 number is only reachable inside `withNumber { }`, which keeps every access point easy to find in
 code review.
 
-## What this does and does not do for PCI DSS
+## PCI DSS scope
 
-A text field cannot make an app compliant. What reduces your scope is the data flow: when the PAN
-goes from the field directly to a PCI DSS certified vault or payment provider and only a token
-reaches your backend, your servers never store, process or transmit cardholder data, which is
-what lets most merchants attest with SAQ A or SAQ A-EP rather than SAQ D. `CDCSecureFields`
-gives you the client half of that design and keeps the number out of your app's code paths. The
-vault, the attestation and the rest of the controls remain yours.
+Identify every component that handles plaintext, can decrypt it or can change the client that captures it. This includes the scanner callback and any custom tokenizer. Review the actual deployment with your acquirer or assessor. The SDK has no assessed SAQ eligibility. [PCI SSC guidance on outsourced processing](https://www.pcisecuritystandards.org/faqs/1092/)
 
-The security code is cleared from the field after a successful `tokenize`, because PCI DSS
-forbids retaining it after authorisation. Expiry and cardholder name may be stored and are
-exposed directly.
-
+The form clears its CVC field when tokenization succeeds. Call `form.clear()` when leaving checkout. After a failed request the fields remain available for correction. Exclude card data from persistent storage and diagnostics. PCI DSS prohibits merchants from retaining the CVC after authorization, including encrypted copies. [PCI SSC FAQ 1280](https://www.pcisecuritystandards.org/faqs/1280/)

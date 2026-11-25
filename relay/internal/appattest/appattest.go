@@ -55,7 +55,8 @@ var (
 // KeyStore persists attested keys. The in-memory implementation is for a single instance.
 type KeyStore interface {
 	Get(keyID string) (pub *ecdsa.PublicKey, counter uint32, ok bool)
-	Put(keyID string, pub *ecdsa.PublicKey, counter uint32)
+	Register(keyID string, pub *ecdsa.PublicKey)
+	Advance(keyID string, counter uint32) bool
 }
 
 type MemoryKeyStore struct {
@@ -74,10 +75,24 @@ func (m *MemoryKeyStore) Get(id string) (*ecdsa.PublicKey, uint32, bool) {
 	e, ok := m.keys[id]
 	return e.pub, e.counter, ok
 }
-func (m *MemoryKeyStore) Put(id string, pub *ecdsa.PublicKey, counter uint32) {
+func (m *MemoryKeyStore) Register(id string, pub *ecdsa.PublicKey) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.keys[id] = entry{pub, counter}
+	if _, exists := m.keys[id]; !exists {
+		m.keys[id] = entry{pub: pub}
+	}
+}
+
+func (m *MemoryKeyStore) Advance(id string, next uint32) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	e, ok := m.keys[id]
+	if !ok || next <= e.counter {
+		return false
+	}
+	e.counter = next
+	m.keys[id] = e
+	return true
 }
 
 // Verifier checks attestations and assertions for one app.
@@ -191,13 +206,13 @@ func (v *Verifier) VerifyAttestation(attestationB64, keyID string, clientDataHas
 	if len(obj.AuthData) < 55+credLen || !bytes.Equal(obj.AuthData[55:55+credLen], keyHash[:]) {
 		return ErrKeyID
 	}
-	v.Keys.Put(keyID, pub, 0)
+	v.Keys.Register(keyID, pub)
 	return nil
 }
 
 // VerifyAssertion validates a per-request assertion over clientDataHash (SHA-256 of the body).
 func (v *Verifier) VerifyAssertion(assertionB64, keyID string, clientDataHash []byte) error {
-	pub, counter, ok := v.Keys.Get(keyID)
+	pub, _, ok := v.Keys.Get(keyID)
 	if !ok {
 		return ErrUnknownKey
 	}
@@ -218,10 +233,9 @@ func (v *Verifier) VerifyAssertion(assertionB64, keyID string, clientDataHash []
 		return ErrAppID
 	}
 	newCounter := binary.BigEndian.Uint32(obj.AuthenticatorData[33:37])
-	if newCounter <= counter {
+	if !v.Keys.Advance(keyID, newCounter) {
 		return ErrCounter
 	}
-	v.Keys.Put(keyID, pub, newCounter)
 	return nil
 }
 

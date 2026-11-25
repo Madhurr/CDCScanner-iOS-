@@ -33,3 +33,12 @@ func (c *NonceCache) Check(nonce string, now time.Time) bool {
 	c.seen[nonce] = now
 	return true
 }
+
+// Consume accepts a previously issued, unexpired challenge exactly once.
+func (c *NonceCache) Consume(nonce string, now time.Time) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	issued, ok := c.seen[nonce]
+	delete(c.seen, nonce)
+	return ok && now.Sub(issued) >= 0 && now.Sub(issued) < c.ttl
+}

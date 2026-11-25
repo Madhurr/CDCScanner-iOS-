@@ -49,9 +49,17 @@ final class NitroAttestationTests: XCTestCase {
         XCTAssertThrowsError(try NitroAttestationVerifier(policy: policy).verify(Self.document, now: Self.now)) { error in
             XCTAssertEqual(error as? AttestationError, .pcrMismatch(index: 0))
         }
-        policy.expectedPCRs = [2: [Self.pcr0]]
+        policy.expectedPCRs = [0: [Self.pcr0], 2: [Self.pcr0]]
         XCTAssertThrowsError(try NitroAttestationVerifier(policy: policy).verify(Self.document, now: Self.now)) { error in
             XCTAssertEqual(error as? AttestationError, .pcrMismatch(index: 2))
+        }
+    }
+
+    func testRequiresProductionImagePin() {
+        var policy = self.policy
+        policy.expectedPCRs = [:]
+        XCTAssertThrowsError(try NitroAttestationVerifier(policy: policy).verify(Self.document, now: Self.now)) {
+            XCTAssertEqual($0 as? AttestationError, .pcrMismatch(index: 0))
         }
     }
 

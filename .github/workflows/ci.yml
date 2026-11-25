@@ -39,6 +39,13 @@ jobs:
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO | tail -n 100
 
+      - name: Run checkout demo UI test
+        run: |
+          set -o pipefail
+          xcodebuild test -project Examples/CardCheckout/CardCheckout.xcodeproj \
+            -scheme CardCheckout -destination 'platform=iOS Simulator,name=iPhone 16' \
+            -parallel-testing-enabled NO | tail -n 100
+
   core:
     name: Core tests (macOS, strict concurrency)
     runs-on: macos-15
@@ -57,8 +64,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: stable
       - run: gofmt -l . && test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go build -tags nitro ./...
-      - run: go test ./...
+      - run: go test -race ./...

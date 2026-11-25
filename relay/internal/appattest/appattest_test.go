@@ -100,3 +100,22 @@ func TestAppleRootParses(t *testing.T) {
 		t.Fatalf("apple root: %v %v", err, cert)
 	}
 }
+
+func TestCounterAdvancesOnceAndSurvivesRegistration(t *testing.T) {
+	store := NewMemoryKeyStore()
+	store.Register("test", nil)
+	results := make(chan bool, 16)
+	for i := 0; i < cap(results); i++ {
+		go func() { results <- store.Advance("test", 1) }()
+	}
+	accepted := 0
+	for i := 0; i < cap(results); i++ {
+		if <-results {
+			accepted++
+		}
+	}
+	store.Register("test", nil)
+	if accepted != 1 || store.Advance("test", 1) {
+		t.Fatal("counter must advance once")
+	}
+}
