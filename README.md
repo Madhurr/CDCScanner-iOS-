@@ -2,11 +2,11 @@
 
 Scan credit and debit cards **fully offline** with the iPhone camera. On-device recognition extracts the card number and optional expiry, with built-in rules for **15 card networks**. Use the scanner on its own, or fill a native SwiftUI or UIKit checkout and send the completed form to your vault for tokenization.
 
-[![CI](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml) · [Beta release](https://github.com/Madhurr/CDCScanner-iOS-/releases/tag/1.0.0-beta.1) · [Swift Package Index](https://swiftpackageindex.com/Madhurr/CDCScanner-iOS-) · [MIT license](LICENSE)
+[![CI](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Madhurr/CDCScanner-iOS-/actions/workflows/ci.yml) · [Release 1.0.0](https://github.com/Madhurr/CDCScanner-iOS-/releases/tag/1.0.0) · [Swift Package Index](https://swiftpackageindex.com/Madhurr/CDCScanner-iOS-) · [MIT license](LICENSE)
 
 [![Three iPhone simulator screenshots show a masked Visa entered in the form, an inline error for an incorrect test security code, and a receipt with tok_demo_visa and the last four digits.](docs/media/checkout-states.png)](docs/media/checkout-states.png)
 
-[Watch the checkout video](https://github.com/Madhurr/CDCScanner-iOS-/releases/download/1.0.0-beta.1/checkout.mp4) · [Open the example source](Examples/CardCheckout/App) · [See the architecture](#architecture) · [Supported card networks](#supported-card-networks)
+[Watch the checkout video](https://github.com/Madhurr/CDCScanner-iOS-/releases/download/1.0.0/checkout.mp4) · [Open the example source](Examples/CardCheckout/App) · [See the architecture](#architecture) · [Supported card networks](#supported-card-networks)
 
 ## Try the checkout
 
@@ -23,12 +23,12 @@ The demo uses the SDK’s fields, validation, JSON request builder, and token pa
 
 </details>
 
-## Install the beta
+## Install with Swift Package Manager
 
-In Xcode, choose **File → Add Package Dependencies**, enter `https://github.com/Madhurr/CDCScanner-iOS-.git`, and select **Exact Version** `1.0.0-beta.1`. In a Swift package manifest, pin the same release.
+In Xcode, choose **File → Add Package Dependencies**, enter `https://github.com/Madhurr/CDCScanner-iOS-.git`, and select **Up to Next Major Version** starting at `1.0.0`. In a Swift package manifest, use the same version rule.
 
 ```swift
-.package(url: "https://github.com/Madhurr/CDCScanner-iOS-.git", exact: "1.0.0-beta.1")
+.package(url: "https://github.com/Madhurr/CDCScanner-iOS-.git", from: "1.0.0")
 ```
 
 | Add this product | When you need |
@@ -110,7 +110,7 @@ Endpoint authentication, token permissions and payment authorization belong to t
 
 The fields and their host app share a process. Field state exposes validation and masked details. A custom tokenizer can read the PAN and CVC, and scanning deliberately returns the full number. Exclude these paths from logs, session replay, analytics and crash attachments. After successful tokenization the form clears its CVC field. An integrating app must also clear abandoned forms and control data retained elsewhere.
 
-The optional [encrypted relay](docs/ZERO_TRUST.md) is experimental. Tests exercise JWE interoperability and synthetic attestation fixtures. Real Apple App Attest enrollment, production processor behavior, AWS Nitro hardware and independent security assessment remain open. This beta has no PCI DSS attestation. Determine scope for the actual integration with your acquirer or assessor. [Evidence and limits](SECURITY.md) · [PCI SSC on encryption and scope](https://www.pcisecuritystandards.org/faqs/1086/)
+The optional [encrypted relay](docs/ZERO_TRUST.md) is experimental. Tests exercise JWE interoperability and synthetic attestation fixtures. Real Apple App Attest enrollment, production processor behavior, AWS Nitro hardware and independent security assessment remain open. This SDK has no PCI DSS attestation. Determine scope for the actual integration with your acquirer or assessor. [Evidence and limits](SECURITY.md) · [PCI SSC on encryption and scope](https://www.pcisecuritystandards.org/faqs/1086/)
 
 ## Run the checks
 

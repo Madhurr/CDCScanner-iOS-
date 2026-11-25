@@ -39,7 +39,7 @@ cryptographic code has unit tests including cross-implementation checks against 
   built behind the `nitro` build tag and verified only by review.
 - No third-party audit has been performed yet.
 
-## Beta evidence and outstanding work
+## Verification evidence and outstanding work
 
 | Path | Evidence in the repository | Still to establish |
 | --- | --- | --- |

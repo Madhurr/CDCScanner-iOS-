@@ -225,8 +225,7 @@ brands you actually accept so fewer candidates qualify.
 
 ## Migrating from the untagged API
 
-The `main` branch before 1.0.0 was never tagged, so it could not be resolved by Swift Package
-Manager and is not source compatible. If you vendored it:
+The original scanner API preceded the versioned releases. If you vendored that implementation or depended on its branch, use these replacements when migrating to 1.0.0.
 
 | Before | Now |
 |---|---|

@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0] – 2026-11-26
+
+First stable Swift Package Manager release of `CDCScanner`, `CDCSecureFields`, and `CDCCore`. It includes offline scanning with rules for 15 card networks, native card-entry fields, and a configurable HTTPS tokenizer. The example app provides a local test-card checkout.
+
+The public Swift APIs match `1.0.0-beta.1`. The README adds checkout screenshots, a tokenization architecture diagram, and the supported network list. The encrypted reference relay remains experimental.
+
 ## [1.0.0-beta.1] – 2026-11-26
 
 First public beta of the rewritten API. Earlier scanner integrations need migration.
